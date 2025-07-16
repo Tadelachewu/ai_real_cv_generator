@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ name }} - Professional CV</title>
+    <style>
+        :root {
+            --primary-color: #2E86C1;
+            --secondary-color: #566573;
+            --accent-color: #E74C3C;
+            --light-gray: #F8F9F9;
+            --dark-gray: #212F3D;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 30px;
+            background-color: white;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 20px;
+        }
+        
+        h1 {
+            color: var(--primary-color);
+            margin-bottom: 5px;
+            font-size: 2.2em;
+        }
+        
+        .contact-info {
+            font-size: 1.1em;
+            color: var(--secondary-color);
+        }
+        
+        h2 {
+            color: var(--primary-color);
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+            margin-top: 25px;
+            font-size: 1.5em;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+        }
+        
+        .job, .education-item, .project {
+            margin-bottom: 20px;
+        }
+        
+        .job-title, .degree, .project-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: var(--dark-gray);
+        }
+        
+        .company, .institution {
+            font-weight: bold;
+        }
+        
+        .date {
+            color: var(--secondary-color);
+            font-style: italic;
+        }
+        
+        .skills-list, .languages-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding-left: 0;
+        }
+        
+        .skills-list li, .languages-list li {
+            list-style: none;
+            background-color: var(--light-gray);
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        
+        ul {
+            padding-left: 20px;
+        }
+        
+        @media print {
+            body {
+                padding: 10px;
+                font-size: 12pt;
+            }
+            .no-print {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{ name }}</h1>
+        <div class="contact-info">
+            {{ email }} | {{ phone }} | {% if linkedin %}<a href="{{ linkedin }}">LinkedIn</a> | {% endif %}{% if portfolio %}<a href="{{ portfolio }}">Portfolio</a>{% endif %}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Professional Summary</h2>
+        <p>{{ summary }}</p>
+    </div>
+
+    {% if experience %}
+    <div class="section">
+        <h2>Professional Experience</h2>
+        {% for job in experience %}
+        <div class="job">
+            <div class="job-title">{{ job.role }}</div>
+            <div><span class="company">{{ job.company }}</span> | <span class="date">{{ job.years }}</span></div>
+            <p>{{ job.description }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if education %}
+    <div class="section">
+        <h2>Education</h2>
+        {% for edu in education %}
+        <div class="education-item">
+            <div class="degree">{{ edu.degree }}</div>
+            <div><span class="institution">{{ edu.institution }}</span> | <span class="date">{{ edu.years }}</span></div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if skills %}
+    <div class="section">
+        <h2>Technical Skills</h2>
+        <ul class="skills-list">
+            {% for skill in skills %}
+            <li>{{ skill }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if languages %}
+    <div class="section">
+        <h2>Languages</h2>
+        <ul class="languages-list">
+            {% for language in languages %}
+            <li>{{ language }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if projects %}
+    <div class="section">
+        <h2>Projects</h2>
+        {% for project in projects %}
+        <div class="project">
+            <div class="project-name">{{ project.name }}</div>
+            <p>{{ project.description }}</p>
+            <div><strong>Technologies:</strong> {{ project.technologies }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="no-print" style="margin-top: 40px; text-align: center; color: var(--secondary-color); font-size: 0.9em;">
+        Last updated: {{ current_date }}
+    </div>
+</body>
+</html>
