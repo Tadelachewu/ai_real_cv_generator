@@ -1,5 +1,4 @@
 import os
-import imghdr
 import logging
 import uuid
 import sqlite3
