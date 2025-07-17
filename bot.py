@@ -20,6 +20,11 @@ from weasyprint import  CSS
 
 from dotenv import load_dotenv
 from docx import Document
+# Add at the top of your main bot file
+from photo_handler import PhotoHandler
+
+# Initialize the photo handler at startup
+photo_handler = PhotoHandler()
 
 # Load environment variables
 load_dotenv()
@@ -33,8 +38,8 @@ logger = logging.getLogger(__name__)
 # States
 (
     NAME, EMAIL, PHONE, SUMMARY, EXPERIENCE, EDUCATION,
-    SKILLS, LANGUAGES, PROJECTS, REVIEW, WAITING_CALLBACK
-) = range(11)
+    SKILLS, LANGUAGES, PROJECTS, REVIEW, WAITING_CALLBACK, PHOTO
+) = range(12)
 
 # DB setup
 def init_db():
@@ -52,22 +57,45 @@ init_db()
 
 # Gemini API call
 def ask_gemini(prompt: str) -> str:
-    """Modified to ensure only CV content is returned"""
+    """Modified to ensure only clean CV content is returned"""
     clean_prompt = f"""
     You are a professional CV writer. 
-    Only return the requested CV content - no explanations, instructions or additional text.
+    Return only the requested CV content with:
+    - No explanations
+    - No instructions
+    - No additional text outside the requested content
+    - No markdown formatting
+    - No placeholders
     
     {prompt}
     """
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
-    data = {"contents": [{"parts": [{"text": clean_prompt}]}]}
+    data = {
+        "contents": [{
+            "parts": [{
+                "text": clean_prompt
+            }]
+        }],
+        "generationConfig": {
+            "temperature": 0.3,  # Less creative, more factual
+            "topP": 0.8,
+            "stopSequences": ["Explanation:", "Note:", "Here's"]
+        }
+    }
 
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
         response.raise_for_status()
-        return response.json()['candidates'][0]['content']['parts'][0]['text']
+        text = response.json()['candidates'][0]['content']['parts'][0]['text']
+        
+        # Post-processing cleanup
+        text = text.replace("Here's the enhanced version:", "")
+        text = text.replace("**", "")  # Remove markdown bold
+        text = text.replace("*", "")   # Remove markdown italics
+        text = text.split("Note:")[0]  # Remove any notes
+        return text.strip()
     except Exception as e:
         logger.error(f"Gemini API Error: {e}")
         return ""
@@ -98,12 +126,11 @@ def load_user_data(user_id: int) -> Optional[Dict]:
 # ... (keep all previous imports and setup code)
 
 def generate_pdf(data: Dict) -> str:
-    """Generate PDF with only final CV content"""
+    """Generate clean, production-ready PDF"""
     enhanced_data = enhance_with_ai(data.copy())
     
-    # Ensure no instructional text remains
-    for job in enhanced_data.get('experience', []):
-        job['description'] = job['description'].replace("Here's the enhanced version:", "").strip()
+    # Final cleanup pass
+    enhanced_data['summary'] = enhanced_data.get('summary', '').split("Note:")[0].strip()
     
     env = Environment(loader=FileSystemLoader('templates'))
     template = env.get_template("professional_cv.html")
@@ -114,65 +141,117 @@ def generate_pdf(data: Dict) -> str:
         'portfolio': enhanced_data.get('portfolio', '')
     })
     
+    # Clean photo handling
+    photo_path = data.get("photo_path")
+    if photo_path and os.path.exists(photo_path):
+        enhanced_data['photo_url'] = f"file://{os.path.abspath(photo_path)}"
+    else:
+        enhanced_data['photo_url'] = None
+        
     html = template.render(enhanced_data)
-    filename = f"temp/{enhanced_data['name'].replace(' ', '_')}_Professional_CV.pdf"
     
-    HTML(string=html).write_pdf(filename)
+    # Generate PDF with professional styling
+    css = CSS(string='''
+        body { font-family: 'Arial', sans-serif; }
+        .ai-generated-content { display: none; }  /* Hide any AI markers */
+    ''')
+    
+    filename = f"temp/{enhanced_data['name'].replace(' ', '_')}_Professional_CV.pdf"
+    HTML(string=html).write_pdf(filename, stylesheets=[css])
     return filename
 
 def enhance_with_ai(data: Dict) -> Dict:
-    """Use AI to enhance the CV to a professional, ready-to-use format based on user data."""
+    """Use AI to enhance the CV while ensuring clean, production-ready output"""
     try:
-        # Build a clean prompt that only requests final CV content
-        exp_str = chr(10).join([f"{e['role']} at {e['company']} ({e['years']}): {e['description']}" 
-                              for e in data.get('experience', [])])
-        edu_str = chr(10).join([f"{e['degree']} at {e['institution']} ({e['years']})" 
-                              for e in data.get('education', [])])
-        skills_str = ', '.join(data.get('skills', []))
-        lang_str = ', '.join(data.get('languages', []))
+        # Build experience string separately to avoid complex f-string
+        experience_str = "\n".join(
+            f"{e['role']} at {e['company']} ({e['years']}): {e['description']}"
+            for e in data.get('experience', [])
+        )
         
+        # Build education string separately
+        education_str = "\n".join(
+            f"{e['degree']} at {e['institution']} ({e['years']})"
+            for e in data.get('education', [])
+        )
+        
+        # Build prompt that demands clean output
         prompt = f"""
-        Create a professional CV using only the following information. 
-        Do not include any instructions or explanations - only the final CV content.
+        Create a professional CV using only this information. 
+        Return ONLY the final CV content with:
+        - No explanations
+        - No instructions
+        - No placeholders
+        - No markdown formatting
         
-        Name: {data.get('name', '')}
+        Candidate: {data.get('name', '')}
         Contact: {data.get('email', '')} | {data.get('phone', '')}
         
-        Professional Experience:
-        {exp_str}
+        Professional Summary:
+        {data.get('summary', '')}
+        
+        Experience:
+        {experience_str}
         
         Education:
-        {edu_str}
+        {education_str}
         
-        Skills: {skills_str}
-        Languages: {lang_str}
+        Skills: {', '.join(data.get('skills', []))}
+        Languages: {', '.join(data.get('languages', []))}
         
-        Return only the enhanced CV content in a dictionary format with these keys:
-        - summary (professional 3-4 sentence summary)
-        - experience (enhanced descriptions with metrics/achievements)
+        Return a JSON-formatted dictionary with these enhanced sections:
+        - summary (3-4 sentence professional summary)
+        - experience (with quantified achievements)
         - education
         - skills (organized by category)
         - languages
-        - certifications (2-3 relevant ones)
         """
+        
+        # Rest of the function remains the same...
         
         response = ask_gemini(prompt)
         
-        # Parse response into clean dictionary
+        # Parse and clean the response
         try:
-            enhanced = eval(response)
-            if isinstance(enhanced, dict):
-                # Merge only the professional enhancements
-                for key in ['summary', 'experience', 'education', 'skills', 'languages', 'certifications']:
-                    if key in enhanced:
-                        data[key] = enhanced[key]
-        except:
-            logger.warning("Couldn't parse structured response, using fallback")
+            # Find the first { and last } to extract pure JSON
+            json_start = response.find('{')
+            json_end = response.rfind('}') + 1
+            json_str = response[json_start:json_end]
+            
+            enhanced = json.loads(json_str)
+            
+            # Merge only the professional enhancements
+            for key in ['summary', 'experience', 'education', 'skills', 'languages']:
+                if key in enhanced:
+                    data[key] = enhanced[key]
+                    
+            # Ensure experience descriptions are clean
+            for job in data.get('experience', []):
+                if 'description' in job:
+                    job['description'] = job['description'].split("Note:")[0].strip()
+                    
+        except json.JSONDecodeError:
+            logger.warning("Couldn't parse JSON response, using original data")
             
     except Exception as e:
         logger.error(f"AI enhancement failed: {e}")
     
     return data
+def clean_cv_text(text: str) -> str:
+    """Remove any AI artifacts from text"""
+    removals = [
+        "Here's the enhanced version:",
+        "Note:",
+        "Important:",
+        "Pro Tip:",
+        "**",
+        "*",
+        "```"
+    ]
+    for removal in removals:
+        text = text.replace(removal, "")
+    return text.strip()
+
 
 def generate_docx(data: Dict) -> str:
     """Generate a professional DOCX version of the CV"""
@@ -180,6 +259,12 @@ def generate_docx(data: Dict) -> str:
     doc = Document()
     
     # Header with contact info
+    photo_path = data.get("photo_path")
+    if photo_path and os.path.exists(photo_path):
+      try:
+        doc.add_picture(photo_path, width=Inches(1.5))
+      except Exception as e:
+        logger.warning(f"Couldn't add profile photo: {e}")
     doc.add_heading(enhanced_data['name'], level=0)
     contact = doc.add_paragraph()
     contact.add_run(f"{enhanced_data.get('email', '')} | {enhanced_data.get('phone', '')}")
@@ -247,15 +332,32 @@ def generate_docx(data: Dict) -> str:
 # ... (keep all remaining code the same)
 
 # Start command handler
+# Modify the receive_photo function
+def receive_photo(update: Update, context: CallbackContext) -> int:
+    result = photo_handler.handle_photo(update, context)
+    if result['success']:
+        context.user_data['cv_data']['photo_path'] = result['file_path']
+        update.message.reply_text(result['message'])
+        return NAME
+    else:
+        update.message.reply_text(result['message'])
+        return PHOTO  # Stay in photo state to retry
+
+# --- ADD SKIP PHOTO HANDLER --- #
+def skip_photo(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("👍 No problem! What's your full name?")
+    return NAME
+
 def start(update: Update, context: CallbackContext) -> int:
     logger.info(f"User {update.effective_user.id} started.")
     context.user_data['cv_data'] = {
         "name": "", "email": "", "phone": "", "summary": "",
         "experience": [], "education": [],
-        "skills": [], "languages": [], "projects": []
+        "skills": [], "languages": [], "projects": [],
+        "photo_path": ""
     }
-    update.message.reply_text("👋 Welcome! What's your full name?")
-    return NAME
+    update.message.reply_text("📸 Please upload a professional profile photo (or type /skip to skip).")
+    return PHOTO
 
 def get_name(update: Update, context: CallbackContext) -> int:
     context.user_data['cv_data']['name'] = update.message.text.strip()
@@ -548,6 +650,10 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
     with open(docx_file, 'rb') as f_docx:
         context.bot.send_document(chat_id=chat_id, document=InputFile(f_docx), filename=os.path.basename(docx_file))
 
+    # Clean up photo file if it exists
+    if 'photo_path' in data and data['photo_path']:
+        photo_handler.cleanup_photo(data['photo_path'])
+
     context.bot.send_message(chat_id=chat_id, text="🚀 Your CV is ready! Use /start to create another.")
     return ConversationHandler.END
 
@@ -578,7 +684,11 @@ def main():
             LANGUAGES: [MessageHandler(Filters.text & ~Filters.command, get_languages)],
             PROJECTS: [MessageHandler(Filters.text & ~Filters.command, get_projects)],
             WAITING_CALLBACK: [CallbackQueryHandler(callback_handler)],
-            REVIEW: [MessageHandler(Filters.text & ~Filters.command, review)],  # Not used for now but can be extended
+            REVIEW: [MessageHandler(Filters.text & ~Filters.command, review)],  
+            PHOTO: [
+    MessageHandler(Filters.photo, receive_photo),
+    CommandHandler("skip", skip_photo)
+],# Not used for now but can be extended
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True

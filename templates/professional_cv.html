@@ -6,108 +6,240 @@
     <title>{{ name }} - Professional CV</title>
     <style>
         :root {
-            --primary-color: #2E86C1;
-            --secondary-color: #566573;
-            --accent-color: #E74C3C;
-            --light-gray: #F8F9F9;
-            --dark-gray: #212F3D;
+            --primary-color: #2563eb;  /* More modern blue */
+            --secondary-color: #4b5563; /* Darker gray */
+            --accent-color: #dc2626;   /* Stronger red */
+            --light-gray: #f3f4f6;
+            --dark-gray: #111827;
+            --section-spacing: 1.5rem;
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.5;
+            color: var(--dark-gray);
             max-width: 800px;
             margin: 0 auto;
-            padding: 30px;
+            padding: 2rem;
             background-color: white;
         }
         
         .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid var(--primary-color);
-            padding-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            margin-bottom: var(--section-spacing);
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--light-gray);
+        }
+        
+        .profile-photo {
+            flex-shrink: 0;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--light-gray);
+        }
+        
+        .header-content {
+            flex: 1;
         }
         
         h1 {
             color: var(--primary-color);
-            margin-bottom: 5px;
-            font-size: 2.2em;
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+            font-weight: 700;
         }
         
         .contact-info {
-            font-size: 1.1em;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-size: 0.95rem;
             color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .contact-info a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        .contact-info a:hover {
+            text-decoration: underline;
         }
         
         h2 {
             color: var(--primary-color);
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-            margin-top: 25px;
-            font-size: 1.5em;
+            border-bottom: 2px solid var(--light-gray);
+            padding-bottom: 0.5rem;
+            margin: var(--section-spacing) 0 1rem 0;
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: -0.025em;
         }
         
         .section {
-            margin-bottom: 25px;
+            margin-bottom: var(--section-spacing);
         }
         
         .job, .education-item, .project {
-            margin-bottom: 20px;
+            margin-bottom: 1.25rem;
+            page-break-inside: avoid;
+        }
+        
+        .job-header, .education-header, .project-header {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.25rem;
         }
         
         .job-title, .degree, .project-name {
-            font-weight: bold;
-            font-size: 1.1em;
+            font-weight: 600;
+            font-size: 1.1rem;
             color: var(--dark-gray);
         }
         
         .company, .institution {
-            font-weight: bold;
+            font-weight: 500;
+            color: var(--secondary-color);
         }
         
         .date {
             color: var(--secondary-color);
-            font-style: italic;
+            font-size: 0.9rem;
+        }
+        
+        .job-description, .project-description {
+            margin-top: 0.5rem;
+        }
+        
+        .job-description ul, .project-description ul {
+            padding-left: 1.25rem;
+            margin: 0.5rem 0;
+        }
+        
+        .job-description li, .project-description li {
+            margin-bottom: 0.25rem;
+        }
+        
+        .skills-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .skill-category {
+            margin-bottom: 1rem;
+        }
+        
+        .skill-category h3 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         
         .skills-list, .languages-list {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 0.5rem;
             padding-left: 0;
+            margin: 0;
         }
         
         .skills-list li, .languages-list li {
             list-style: none;
             background-color: var(--light-gray);
-            padding: 5px 10px;
-            border-radius: 3px;
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.9rem;
         }
         
-        ul {
-            padding-left: 20px;
+        .languages-list li {
+            background-color: white;
+            border: 1px solid var(--light-gray);
+        }
+        
+        .project-technologies {
+            font-size: 0.9rem;
+            color: var(--secondary-color);
+            margin-top: 0.5rem;
+        }
+        
+        .no-print {
+            margin-top: 2rem;
+            text-align: center;
+            color: var(--secondary-color);
+            font-size: 0.8rem;
         }
         
         @media print {
             body {
-                padding: 10px;
-                font-size: 12pt;
+                padding: 0.5in;
+                font-size: 11pt;
+                line-height: 1.4;
             }
+            
             .no-print {
                 display: none;
+            }
+            
+            .header {
+                padding-bottom: 1rem;
+                margin-bottom: 1rem;
+            }
+            
+            h2 {
+                margin-top: 1rem;
+            }
+            
+            a {
+                text-decoration: none;
+                color: var(--secondary-color);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                text-align: center;
+                gap: 1rem;
+            }
+            
+            .contact-info {
+                justify-content: center;
             }
         }
     </style>
 </head>
 <body>
-    <div class="header">
+ <div class="header">
+    {% if photo_url %}
+    <div class="photo-container">
+        <img src="{{ photo_url }}" class="profile-photo" alt="Profile Photo">
+    </div>
+    {% endif %}
+    
+    <div class="header-content">
         <h1>{{ name }}</h1>
         <div class="contact-info">
             {{ email }} | {{ phone }} | {% if linkedin %}<a href="{{ linkedin }}">LinkedIn</a> | {% endif %}{% if portfolio %}<a href="{{ portfolio }}">Portfolio</a>{% endif %}
         </div>
+        {% if job_title or location %}
+        <div class="contact-info">
+            {% if job_title %}<span>{{ job_title }}</span>{% endif %}
+            {% if location %}<span>{{ location }}</span>{% endif %}
+        </div>
+        {% endif %}
     </div>
+</div>
 
     <div class="section">
         <h2>Professional Summary</h2>
@@ -119,9 +251,16 @@
         <h2>Professional Experience</h2>
         {% for job in experience %}
         <div class="job">
-            <div class="job-title">{{ job.role }}</div>
-            <div><span class="company">{{ job.company }}</span> | <span class="date">{{ job.years }}</span></div>
-            <p>{{ job.description }}</p>
+            <div class="job-header">
+                <div>
+                    <span class="job-title">{{ job.role }}</span>
+                    <span class="company">at {{ job.company }}</span>
+                </div>
+                <div class="date">{{ job.years }}</div>
+            </div>
+            <div class="job-description">
+                {{ job.description|safe }}
+            </div>
         </div>
         {% endfor %}
     </div>
@@ -132,8 +271,22 @@
         <h2>Education</h2>
         {% for edu in education %}
         <div class="education-item">
-            <div class="degree">{{ edu.degree }}</div>
-            <div><span class="institution">{{ edu.institution }}</span> | <span class="date">{{ edu.years }}</span></div>
+            <div class="education-header">
+                <div>
+                    <span class="degree">{{ edu.degree }}</span>
+                    <span class="institution">at {{ edu.institution }}</span>
+                </div>
+                <div class="date">{{ edu.years }}</div>
+            </div>
+            {% if edu.achievements %}
+            <div class="job-description">
+                <ul>
+                    {% for achievement in edu.achievements %}
+                    <li>{{ achievement }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
@@ -141,12 +294,41 @@
 
     {% if skills %}
     <div class="section">
-        <h2>Technical Skills</h2>
-        <ul class="skills-list">
-            {% for skill in skills %}
-            <li>{{ skill }}</li>
-            {% endfor %}
-        </ul>
+        <h2>Skills</h2>
+        <div class="skills-container">
+            {% if skills.technical %}
+            <div class="skill-category">
+                <h3>Technical</h3>
+                <ul class="skills-list">
+                    {% for skill in skills.technical %}
+                    <li>{{ skill }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if skills.soft %}
+            <div class="skill-category">
+                <h3>Soft Skills</h3>
+                <ul class="skills-list">
+                    {% for skill in skills.soft %}
+                    <li>{{ skill }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if skills.tools %}
+            <div class="skill-category">
+                <h3>Tools</h3>
+                <ul class="skills-list">
+                    {% for skill in skills.tools %}
+                    <li>{{ skill }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
     </div>
     {% endif %}
 
@@ -166,15 +348,35 @@
         <h2>Projects</h2>
         {% for project in projects %}
         <div class="project">
-            <div class="project-name">{{ project.name }}</div>
-            <p>{{ project.description }}</p>
-            <div><strong>Technologies:</strong> {{ project.technologies }}</div>
+            <div class="project-header">
+                <div class="project-name">{{ project.name }}</div>
+                {% if project.date %}<div class="date">{{ project.date }}</div>{% endif %}
+            </div>
+            <div class="project-description">
+                {{ project.description|safe }}
+            </div>
+            {% if project.technologies %}
+            <div class="project-technologies">
+                <strong>Technologies:</strong> {{ project.technologies }}
+            </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
     {% endif %}
 
-    <div class="no-print" style="margin-top: 40px; text-align: center; color: var(--secondary-color); font-size: 0.9em;">
+    {% if certifications %}
+    <div class="section">
+        <h2>Certifications</h2>
+        <ul class="job-description">
+            {% for cert in certifications %}
+            <li>{{ cert.name }} ({{ cert.issuer }}, {{ cert.year }})</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div class="no-print">
         Last updated: {{ current_date }}
     </div>
 </body>
