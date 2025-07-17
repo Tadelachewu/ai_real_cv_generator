@@ -4,3 +4,4 @@ weasyprint
 requests
 python-dotenv
 python-docx
+imghdr
