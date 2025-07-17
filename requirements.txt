@@ -1,4 +1,4 @@
- python-telegram-bot --upgrade
+ python-telegram-bot 
 jinja2
 weasyprint
 requests
