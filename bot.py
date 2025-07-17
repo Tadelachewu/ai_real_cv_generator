@@ -7,7 +7,7 @@ from datetime import datetime
 
 import requests
 from telegram import (
-    Update,
+    Update, InputFile,
     InlineKeyboardButton, InlineKeyboardMarkup
 )
 from telegram.ext import (
@@ -20,11 +20,6 @@ from weasyprint import  CSS
 
 from dotenv import load_dotenv
 from docx import Document
-# Add at the top of your main bot file
-from photo_handler import PhotoHandler
-
-# Initialize the photo handler at startup
-photo_handler = PhotoHandler()
 
 # Load environment variables
 load_dotenv()
@@ -57,45 +52,22 @@ init_db()
 
 # Gemini API call
 def ask_gemini(prompt: str) -> str:
-    """Modified to ensure only clean CV content is returned"""
+    """Modified to ensure only CV content is returned"""
     clean_prompt = f"""
     You are a professional CV writer. 
-    Return only the requested CV content with:
-    - No explanations
-    - No instructions
-    - No additional text outside the requested content
-    - No markdown formatting
-    - No placeholders
+    Only return the requested CV content - no explanations, instructions or additional text.
     
     {prompt}
     """
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
-    data = {
-        "contents": [{
-            "parts": [{
-                "text": clean_prompt
-            }]
-        }],
-        "generationConfig": {
-            "temperature": 0.3,  # Less creative, more factual
-            "topP": 0.8,
-            "stopSequences": ["Explanation:", "Note:", "Here's"]
-        }
-    }
+    data = {"contents": [{"parts": [{"text": clean_prompt}]}]}
 
     try:
         response = requests.post(url, headers=headers, json=data, timeout=10)
         response.raise_for_status()
-        text = response.json()['candidates'][0]['content']['parts'][0]['text']
-        
-        # Post-processing cleanup
-        text = text.replace("Here's the enhanced version:", "")
-        text = text.replace("**", "")  # Remove markdown bold
-        text = text.replace("*", "")   # Remove markdown italics
-        text = text.split("Note:")[0]  # Remove any notes
-        return text.strip()
+        return response.json()['candidates'][0]['content']['parts'][0]['text']
     except Exception as e:
         logger.error(f"Gemini API Error: {e}")
         return ""
@@ -126,11 +98,12 @@ def load_user_data(user_id: int) -> Optional[Dict]:
 # ... (keep all previous imports and setup code)
 
 def generate_pdf(data: Dict) -> str:
-    """Generate clean, production-ready PDF"""
+    """Generate PDF with only final CV content"""
     enhanced_data = enhance_with_ai(data.copy())
     
-    # Final cleanup pass
-    enhanced_data['summary'] = enhanced_data.get('summary', '').split("Note:")[0].strip()
+    # Ensure no instructional text remains
+    for job in enhanced_data.get('experience', []):
+        job['description'] = job['description'].replace("Here's the enhanced version:", "").strip()
     
     env = Environment(loader=FileSystemLoader('templates'))
     template = env.get_template("professional_cv.html")
@@ -141,117 +114,71 @@ def generate_pdf(data: Dict) -> str:
         'portfolio': enhanced_data.get('portfolio', '')
     })
     
-    # Clean photo handling
     photo_path = data.get("photo_path")
     if photo_path and os.path.exists(photo_path):
-        enhanced_data['photo_url'] = f"file://{os.path.abspath(photo_path)}"
+      enhanced_data['photo_url'] = f"file://{os.path.abspath(photo_path)}"
     else:
-        enhanced_data['photo_url'] = None
-        
+     enhanced_data['photo_url'] = None
     html = template.render(enhanced_data)
     
-    # Generate PDF with professional styling
-    css = CSS(string='''
-        body { font-family: 'Arial', sans-serif; }
-        .ai-generated-content { display: none; }  /* Hide any AI markers */
-    ''')
-    
     filename = f"temp/{enhanced_data['name'].replace(' ', '_')}_Professional_CV.pdf"
-    HTML(string=html).write_pdf(filename, stylesheets=[css])
+    
+    HTML(string=html).write_pdf(filename)
     return filename
 
 def enhance_with_ai(data: Dict) -> Dict:
-    """Use AI to enhance the CV while ensuring clean, production-ready output"""
+    """Use AI to enhance the CV to a professional, ready-to-use format based on user data."""
     try:
-        # Build experience string separately to avoid complex f-string
-        experience_str = "\n".join(
-            f"{e['role']} at {e['company']} ({e['years']}): {e['description']}"
-            for e in data.get('experience', [])
-        )
+        # Build a clean prompt that only requests final CV content
+        exp_str = chr(10).join([f"{e['role']} at {e['company']} ({e['years']}): {e['description']}" 
+                              for e in data.get('experience', [])])
+        edu_str = chr(10).join([f"{e['degree']} at {e['institution']} ({e['years']})" 
+                              for e in data.get('education', [])])
+        skills_str = ', '.join(data.get('skills', []))
+        lang_str = ', '.join(data.get('languages', []))
         
-        # Build education string separately
-        education_str = "\n".join(
-            f"{e['degree']} at {e['institution']} ({e['years']})"
-            for e in data.get('education', [])
-        )
-        
-        # Build prompt that demands clean output
         prompt = f"""
-        Create a professional CV using only this information. 
-        Return ONLY the final CV content with:
-        - No explanations
-        - No instructions
-        - No placeholders
-        - No markdown formatting
+        Create a professional CV using only the following information. 
+        Do not include any instructions or explanations - only the final CV content.
         
-        Candidate: {data.get('name', '')}
+        Name: {data.get('name', '')}
         Contact: {data.get('email', '')} | {data.get('phone', '')}
         
-        Professional Summary:
-        {data.get('summary', '')}
-        
-        Experience:
-        {experience_str}
+        Professional Experience:
+        {exp_str}
         
         Education:
-        {education_str}
+        {edu_str}
         
-        Skills: {', '.join(data.get('skills', []))}
-        Languages: {', '.join(data.get('languages', []))}
+        Skills: {skills_str}
+        Languages: {lang_str}
         
-        Return a JSON-formatted dictionary with these enhanced sections:
-        - summary (3-4 sentence professional summary)
-        - experience (with quantified achievements)
+        Return only the enhanced CV content in a dictionary format with these keys:
+        - summary (professional 3-4 sentence summary)
+        - experience (enhanced descriptions with metrics/achievements)
         - education
         - skills (organized by category)
         - languages
+        - certifications (2-3 relevant ones)
         """
-        
-        # Rest of the function remains the same...
         
         response = ask_gemini(prompt)
         
-        # Parse and clean the response
+        # Parse response into clean dictionary
         try:
-            # Find the first { and last } to extract pure JSON
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            json_str = response[json_start:json_end]
-            
-            enhanced = json.loads(json_str)
-            
-            # Merge only the professional enhancements
-            for key in ['summary', 'experience', 'education', 'skills', 'languages']:
-                if key in enhanced:
-                    data[key] = enhanced[key]
-                    
-            # Ensure experience descriptions are clean
-            for job in data.get('experience', []):
-                if 'description' in job:
-                    job['description'] = job['description'].split("Note:")[0].strip()
-                    
-        except json.JSONDecodeError:
-            logger.warning("Couldn't parse JSON response, using original data")
+            enhanced = eval(response)
+            if isinstance(enhanced, dict):
+                # Merge only the professional enhancements
+                for key in ['summary', 'experience', 'education', 'skills', 'languages', 'certifications']:
+                    if key in enhanced:
+                        data[key] = enhanced[key]
+        except:
+            logger.warning("Couldn't parse structured response, using fallback")
             
     except Exception as e:
         logger.error(f"AI enhancement failed: {e}")
     
     return data
-def clean_cv_text(text: str) -> str:
-    """Remove any AI artifacts from text"""
-    removals = [
-        "Here's the enhanced version:",
-        "Note:",
-        "Important:",
-        "Pro Tip:",
-        "**",
-        "*",
-        "```"
-    ]
-    for removal in removals:
-        text = text.replace(removal, "")
-    return text.strip()
-
 
 def generate_docx(data: Dict) -> str:
     """Generate a professional DOCX version of the CV"""
@@ -332,16 +259,13 @@ def generate_docx(data: Dict) -> str:
 # ... (keep all remaining code the same)
 
 # Start command handler
-# Modify the receive_photo function
 def receive_photo(update: Update, context: CallbackContext) -> int:
-    result = photo_handler.handle_photo(update, context)
-    if result['success']:
-        context.user_data['cv_data']['photo_path'] = result['file_path']
-        update.message.reply_text(result['message'])
-        return NAME
-    else:
-        update.message.reply_text(result['message'])
-        return PHOTO  # Stay in photo state to retry
+    photo_file = update.message.photo[-1].get_file()
+    file_path = f"temp/photo_{update.effective_user.id}.jpg"
+    photo_file.download(file_path)
+    context.user_data['cv_data']['photo_path'] = file_path
+    update.message.reply_text("✅ Photo received. Now, what's your full name?")
+    return NAME
 
 # --- ADD SKIP PHOTO HANDLER --- #
 def skip_photo(update: Update, context: CallbackContext) -> int:
@@ -649,10 +573,6 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
         context.bot.send_document(chat_id=chat_id, document=InputFile(f_pdf), filename=os.path.basename(pdf_file))
     with open(docx_file, 'rb') as f_docx:
         context.bot.send_document(chat_id=chat_id, document=InputFile(f_docx), filename=os.path.basename(docx_file))
-
-    # Clean up photo file if it exists
-    if 'photo_path' in data and data['photo_path']:
-        photo_handler.cleanup_photo(data['photo_path'])
 
     context.bot.send_message(chat_id=chat_id, text="🚀 Your CV is ready! Use /start to create another.")
     return ConversationHandler.END
