@@ -7,7 +7,7 @@ from datetime import datetime
 
 import requests
 from telegram import (
-    Update, InputFile,
+    Update,
     InlineKeyboardButton, InlineKeyboardMarkup
 )
 from telegram.ext import (
