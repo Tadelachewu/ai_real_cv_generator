@@ -4,4 +4,3 @@ weasyprint
 requests
 python-dotenv
 python-docx
-filetype
