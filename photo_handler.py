@@ -1,5 +1,4 @@
 import os
-import imghdr
 import logging
 from typing import Dict
 from telegram import Update
