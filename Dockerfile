@@ -1,15 +1,18 @@
-FROM python:3.11.9
+FROM debian:bullseye
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install WeasyPrint dependencies
+# Install Python and system dependencies for WeasyPrint
 RUN apt-get update && apt-get install -y \
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
+    python3-pip \
     build-essential \
     libcairo2 \
-    pango1.0-tools \
-    libpango1.0-dev \
+    libpango-1.0-0 \
     libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-dev \
+    libgdk-pixbuf2.0-0 \
     libffi-dev \
     libxml2 \
     libxslt1.1 \
@@ -18,14 +21,22 @@ RUN apt-get update && apt-get install -y \
     curl \
     libgobject-2.0-0 \
     fonts-liberation \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Set working directory
 WORKDIR /app
 
+# Copy project files
 COPY . /app
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+# Install Python dependencies
+RUN pip3 install --upgrade pip
+RUN pip3 install -r requirements.txt
 
-CMD ["python", "bot.py"]
+# Run the bot
+CMD ["python3", "bot.py"]
