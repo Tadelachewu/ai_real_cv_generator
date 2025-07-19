@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ name }} - CV</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #4a6fa5;
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 5px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 36px;
+            font-weight: 300;
+        }
+        h2 {
+            color: #4a6fa5;
+            border-bottom: 2px solid #4a6fa5;
+            padding-bottom: 5px;
+            font-weight: 400;
+        }
+        .photo {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid white;
+            margin: 0 auto 20px;
+            display: block;
+        }
+        .contact-info {
+            margin-top: 10px;
+            font-size: 16px;
+        }
+        .section {
+            margin-bottom: 25px;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .job {
+            margin-bottom: 15px;
+        }
+        .job-title {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .skills-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 0;
+            list-style: none;
+        }
+        .skill {
+            background-color: #4a6fa5;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        .project {
+            margin-bottom: 15px;
+        }
+        .project-title {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        {% if photo_url %}
+        <img src="{{ photo_url }}" class="photo" alt="Profile Photo">
+        {% endif %}
+        <h1>{{ name }}</h1>
+        <div class="contact-info">
+            {{ email }} | {{ phone }}<br>
+            {% if linkedin %}LinkedIn: {{ linkedin }}{% endif %}
+            {% if portfolio %} | Portfolio: {{ portfolio }}{% endif %}
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Professional Summary</h2>
+        <p>{{ summary }}</p>
+    </div>
+
+    <div class="section">
+        <h2>Experience</h2>
+        {% for job in experience %}
+        <div class="job">
+            <div class="job-title">{{ job.role }} at {{ job.company }} ({{ job.years }})</div>
+            <p>{{ job.description }}</p>
+            {% if job.achievements %}
+            <p><strong>Achievements:</strong></p>
+            <ul>
+                {% for achievement in job.achievements %}
+                <li>{{ achievement }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <h2>Education</h2>
+        {% for edu in education %}
+        <div class="job">
+            <div class="job-title">{{ edu.degree }} at {{ edu.institution }} ({{ edu.years }})</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <h2>Skills</h2>
+        <ul class="skills-list">
+            {% if skills is mapping %}
+                {% for category, items in skills.items() %}
+                <li class="skill">{{ category }}: {{ items|join(', ') }}</li>
+                {% endfor %}
+            {% else %}
+                {% for skill in skills %}
+                <li class="skill">{{ skill }}</li>
+                {% endfor %}
+            {% endif %}
+        </ul>
+    </div>
+
+    {% if projects %}
+    <div class="section">
+        <h2>Projects</h2>
+        {% for project in projects %}
+        <div class="project">
+            <div class="project-title">{{ project.name }} ({{ project.technologies }})</div>
+            <p>{{ project.description }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</body>
+</html>
