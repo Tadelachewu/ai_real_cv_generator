@@ -30,7 +30,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", 8443))
-ENV = os.getenv("ENV", "development")
+ENV = os.getenv("ENV")
 
 # Logging setup
 logging.basicConfig(
