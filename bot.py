@@ -5,7 +5,8 @@ import sqlite3
 
 from docx import Document
 
-
+from telegram.ext import ContextTypes
+from db_comments import save_user_comment
 
 from telegram import (
     Update, InputFile,
@@ -21,11 +22,15 @@ from dotenv import load_dotenv
 from ai import ask_gemini
 from db import save_user_data
 from generateDocs import generate_docx, generate_pdf
+from user_analytics import analytics
+from feedback import feedback_conversation
 
 # Load environment variables
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8443))
+ENV = os.getenv("ENV", "development")
 
 # Logging setup
 logging.basicConfig(
@@ -69,6 +74,9 @@ init_db()
 
 # Handlers
 def start(update: Update, context: CallbackContext) -> int:
+    user_id = update.effective_user.id
+    analytics.log_action(user_id, "session_started")
+    analytics.start_session(user_id)
     """Start the conversation and initialize user data"""
     logger.info(f"User {update.effective_user.id} started CV creation")
     context.user_data.clear()
@@ -85,6 +93,29 @@ def start(update: Update, context: CallbackContext) -> int:
         ])
     )
     return PHOTO
+
+def handle_comment(update: Update, context: CallbackContext):
+    user = update.effective_user
+
+    # If no comment text provided
+    if update.message.text == "/comment":
+        update.message.reply_text("💬 Please type your comment after the /comment command or just send it now.sample ")
+        update.message.reply_text(" sample /comment you made it real cv app")
+        return
+
+    comment_text = update.message.text.replace("/comment", "").strip()
+    
+    if not comment_text:
+        update.message.reply_text("❗ You need to provide a comment. Example:\n`/comment This CV bot is amazing!`", parse_mode="Markdown")
+        return
+
+    save_user_comment(
+        user_id=user.id,
+        username=user.username or user.first_name,
+        comment=comment_text
+    )
+
+    update.message.reply_text("✅ Thank you! Your comment has been saved.")
 
 def select_template(update: Update, context: CallbackContext) -> int:
     """Let user select a template"""
@@ -314,6 +345,10 @@ def get_projects(update: Update, context: CallbackContext) -> int:
 
 def generate_cv(update: Update, context: CallbackContext) -> int:
     """Generate and send the CV files"""
+    user_id = update.effective_user.id
+    analytics.log_action(user_id, "cv_generated", {
+        "template": context.user_data['cv_data']['template']
+    })
     try:
         # Handle both callback and message updates
         if update.callback_query:
@@ -354,7 +389,8 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
         context.bot.send_message(
             chat_id=chat_id,
             text="🎉 Your professional CV is ready!\n"
-                 "Use /start to create another CV."
+                 "Use /start to create another CV.\n"
+                 "use /feedback to provide feedback on this CV generation process."
         )
         
         # Save to database
@@ -578,7 +614,9 @@ def main():
     """Start the bot"""
     updater = Updater(TELEGRAM_TOKEN)
     dp = updater.dispatcher
-
+    dp.add_handler(feedback_conversation)
+      # 🔽 Register the comment handler
+    dp.add_handler(CommandHandler("comment", handle_comment))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -606,7 +644,20 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_error_handler(error_handler)
 
-    updater.start_polling()
+    if ENV == "production":
+        # Webhook configuration for production
+        updater.start_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TELEGRAM_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{TELEGRAM_TOKEN}"
+        )
+        logger.info("Webhook server started in production mode")
+    else:
+        # Polling for development
+        updater.start_polling()
+        logger.info("Polling server started in development mode")
+
     updater.idle()
 
 if __name__ == '__main__':

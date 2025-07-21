@@ -5,147 +5,168 @@
     <title>{{ name }} - Professional CV</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
-            line-height: 1.5;
-            margin: 20px;
-            color: #333;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px;
+            background: linear-gradient(to bottom, #f9f9f9, #e6ecf3);
+            color: #2c3e50;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: #ffffff;
+            padding: 30px 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         }
         .header {
-            margin-bottom: 20px;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 25px;
             padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
         h1 {
-            color: #2563eb;
-            margin-bottom: 5px;
+            color: #1e40af;
+            margin: 0;
         }
         .contact-info {
-            margin-bottom: 10px;
             color: #555;
+            font-size: 14px;
         }
         h2 {
-            color: #2563eb;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 3px;
-            margin-top: 20px;
+            color: #1e40af;
+            font-size: 20px;
+            margin-top: 30px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
         }
-        .job {
-            margin-bottom: 15px;
+        .job, .project, .education {
+            margin-bottom: 20px;
         }
         .job-title {
             font-weight: bold;
+            font-size: 16px;
         }
         .skills-list {
-            padding-left: 0;
+            list-style: none;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
         .skills-list li {
-            display: inline-block;
-            background: #f3f3f3;
-            padding: 5px 10px;
-            margin: 0 5px 5px 0;
-            border-radius: 3px;
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
         }
-        @media print {
-            body {
-                font-size: 11pt;
-                margin: 0;
-                padding: 0;
-            }
-            a {
-                text-decoration: none;
-                color: #000;
-            }
+        img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 50%;
+            border: 2px solid #ccc;
+        }
+        .footer {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 40px;
+            text-align: right;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        {% if photo_url %}
-        <div style="float: right; margin-left: 20px;">
-            <img src="{{ photo_url }}" style="width: 100px; height: 100px; object-fit: cover; border-radius: 50%;">
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>{{ name }}</h1>
+                <div class="contact-info">
+                    {{ email }} | {{ phone }}
+                    {% if linkedin %} | LinkedIn: {{ linkedin }}{% endif %}
+                    {% if portfolio %} | Portfolio: {{ portfolio }}{% endif %}
+                </div>
+            </div>
+            {% if photo_url %}
+            <img src="{{ photo_url }}" alt="Profile Photo">
+            {% endif %}
         </div>
+
+        <h2>Professional Summary</h2>
+        <p>{{ summary }}</p>
+
+        {% if experience %}
+        <h2>Professional Experience</h2>
+        {% for job in experience %}
+        <div class="job">
+            <div class="job-title">{{ job.role }} at {{ job.company }}</div>
+            <div style="color: #666;">{{ job.years }}</div>
+            <p>{{ job.description|safe }}</p>
+        </div>
+        {% endfor %}
         {% endif %}
-        
-        <h1>{{ name }}</h1>
-        <div class="contact-info">
-            {{ email }} | {{ phone }}
-            {% if linkedin %}| LinkedIn: {{ linkedin }}{% endif %}
-            {% if portfolio %}| Portfolio: {{ portfolio }}{% endif %}
+
+        {% if education %}
+        <h2>Education</h2>
+        {% for edu in education %}
+        <div class="education">
+            <div class="job-title">{{ edu.degree }} at {{ edu.institution }}</div>
+            <div style="color: #666;">{{ edu.years }}</div>
         </div>
-    </div>
+        {% endfor %}
+        {% endif %}
 
-    <h2>Professional Summary</h2>
-    <p>{{ summary }}</p>
-
-    {% if experience %}
-    <h2>Professional Experience</h2>
-    {% for job in experience %}
-    <div class="job">
-        <div class="job-title">{{ job.role }} at {{ job.company }}</div>
-        <div style="color: #555; margin-bottom: 5px;">{{ job.years }}</div>
-        <div>{{ job.description|safe }}</div>
-    </div>
-    {% endfor %}
-    {% endif %}
-
-    {% if education %}
-    <h2>Education</h2>
-    {% for edu in education %}
-    <div class="job">
-        <div class="job-title">{{ edu.degree }} at {{ edu.institution }}</div>
-        <div style="color: #555;">{{ edu.years }}</div>
-    </div>
-    {% endfor %}
-    {% endif %}
-
-    {% if skills %}
-    <h2>Skills</h2>
-    <ul class="skills-list">
-        {% if skills is mapping %}
-            {% for category, skill_list in skills.items() %}
-                {% for skill in skill_list %}
+        {% if skills %}
+        <h2>Skills</h2>
+        <ul class="skills-list">
+            {% if skills is mapping %}
+                {% for category, skill_list in skills.items() %}
+                    {% for skill in skill_list %}
+                    <li>{{ skill }}</li>
+                    {% endfor %}
+                {% endfor %}
+            {% else %}
+                {% for skill in skills %}
                 <li>{{ skill }}</li>
                 {% endfor %}
-            {% endfor %}
-        {% else %}
-            {% for skill in skills %}
-            <li>{{ skill }}</li>
-            {% endfor %}
+            {% endif %}
+        </ul>
         {% endif %}
-    </ul>
-    {% endif %}
 
-    {% if languages %}
-    <h2>Languages</h2>
-    <ul class="skills-list">
-        {% for language in languages %}
-        <li>{{ language }}</li>
+        {% if languages %}
+        <h2>Languages</h2>
+        <ul class="skills-list">
+            {% for language in languages %}
+            <li>{{ language }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if projects %}
+        <h2>Projects</h2>
+        {% for project in projects %}
+        <div class="project">
+            <div class="job-title">{{ project.name }}</div>
+            <div style="color: #555;">Technologies: {{ project.technologies }}</div>
+            <p>{{ project.description }}</p>
+        </div>
         {% endfor %}
-    </ul>
-    {% endif %}
+        {% endif %}
 
-    {% if projects %}
-    <h2>Projects</h2>
-    {% for project in projects %}
-    <div class="job">
-        <div class="job-title">{{ project.name }}</div>
-        <div style="color: #555; margin-bottom: 5px;">Technologies: {{ project.technologies }}</div>
-        <div>{{ project.description }}</div>
-    </div>
-    {% endfor %}
-    {% endif %}
+        {% if certifications %}
+        <h2>Certifications</h2>
+        <ul>
+            {% for cert in certifications %}
+            <li>{{ cert }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
 
-    {% if certifications %}
-    <h2>Certifications</h2>
-    <ul>
-        {% for cert in certifications %}
-        <li>{{ cert }}</li>
-        {% endfor %}
-    </ul>
-    {% endif %}
-
-    <div style="margin-top: 30px; color: #777; font-size: 0.8em;">
-        Last updated: {{ current_date }}
+        <div class="footer">Last updated: {{ current_date }}</div>
     </div>
 </body>
 </html>

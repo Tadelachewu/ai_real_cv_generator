@@ -7,12 +7,14 @@ from venv import logger
 from docx import Document
 from docx.shared import Inches
 from jinja2 import Environment, FileSystemLoader
-
+from urllib.request import pathname2url  # ✅ Proper path conversion for URI
 
 from weasyprint import HTML, CSS
 
 from ai import enhance_with_ai
+import logging  # ✅ Correct logger module
 
+logger = logging.getLogger(__name__)  # ✅ Proper logger setup
 
 # from bot import TEMP_DIR, TEMPLATES_DIR, enhance_with_ai
 # Initialize base directory
@@ -25,64 +27,64 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
 def generate_pdf(data: Dict) -> str:
-    """Generate PDF CV with robust error handling"""
+    """Generate PDF CV with robust error handling and photo support"""
     try:
         enhanced_data = data.copy()
 
-        # Handle photo path with proper URI formatting
-        photo_path = data.get("photo_path")
+        # ✅ Handle photo path correctly for WeasyPrint
+        photo_path = enhanced_data.get("photo_path")
         if photo_path and os.path.exists(photo_path):
             abs_path = os.path.abspath(photo_path)
-            enhanced_data['photo_url'] = f"file://{abs_path.replace(os.sep, '/').lstrip('/')}"
+            # Use pathname2url to ensure special characters and slashes are properly encoded
+            enhanced_data['photo_url'] = f"file://{pathname2url(abs_path)}"
         else:
             enhanced_data['photo_url'] = None
-            logger.info("No photo included in PDF")
+            logger.info("No valid photo included for PDF")
 
-        # Set up template environment
+        # ✅ Set up template environment
         env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
-        
-        # Template selection with fallback
-        template_name = data.get('template', 'professional')
+        template_name = enhanced_data.get('template', 'professional')
         template_file = f"{template_name}_cv.html"
-        
+
         try:
             template = env.get_template(template_file)
         except Exception as e:
-            logger.warning(f"Template {template_file} not found, using default: {e}")
+            logger.warning(f"Template {template_file} not found. Falling back to default. Reason: {e}")
             template = env.get_template("professional_cv.html")
 
-        # Add additional data fields
+        # ✅ Add optional fields if missing
         enhanced_data.update({
             'current_date': datetime.now().strftime("%B %Y"),
             'linkedin': enhanced_data.get('linkedin', ''),
             'portfolio': enhanced_data.get('portfolio', ''),
             'skills': enhanced_data.get('skills', []),
-            'languages': enhanced_data.get('languages', [])
+            'languages': enhanced_data.get('languages', []),
+            'certifications': enhanced_data.get('certifications', []),
+            'projects': enhanced_data.get('projects', []),
+            'experience': enhanced_data.get('experience', []),
+            'education': enhanced_data.get('education', [])
         })
 
-        # Render template to HTML
+        # ✅ Render the HTML from Jinja2 template
         html = template.render(enhanced_data)
 
-        # Create safe filename
-        safe_name = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in enhanced_data['name'])
+        # ✅ Create a safe filename for the PDF
+        safe_name = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in enhanced_data.get('name', 'cv'))
         filename = os.path.join(TEMP_DIR, f"{safe_name}_CV.pdf")
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-        # Generate PDF with WeasyPrint
+        # ✅ Generate PDF using WeasyPrint
         html_obj = HTML(string=html)
         css = CSS(string='@page { size: A4; margin: 1cm; }')
         html_obj.write_pdf(filename, stylesheets=[css])
 
-        logger.info(f"PDF successfully generated at: {filename}")
+        logger.info(f"✅ PDF successfully generated at: {filename}")
         return filename
 
     except Exception as e:
-        logger.error(f"PDF generation failed: {type(e).__name__}: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"❌ PDF generation failed: {type(e).__name__}: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
         raise RuntimeError(f"Failed to generate PDF: {str(e)}")
-
+    
 def generate_docx(data: Dict) -> str:
     """Generate DOCX version of CV with improved reliability"""
     try:
@@ -155,6 +157,14 @@ def generate_docx(data: Dict) -> str:
                     doc.add_paragraph(', '.join(skills))
             else:
                 doc.add_paragraph(', '.join(str(skill) for skill in enhanced_data['skills']))
+                # Languages section
+        if enhanced_data.get('languages'):
+            doc.add_heading('Languages', level=1)
+            if isinstance(enhanced_data['languages'], list):
+                doc.add_paragraph(', '.join(str(lang) for lang in enhanced_data['languages']))
+            elif isinstance(enhanced_data['languages'], dict):
+                for lang, level in enhanced_data['languages'].items():
+                    doc.add_paragraph(f"{lang}: {level}")
 
         # Projects section
         if enhanced_data.get('projects'):
