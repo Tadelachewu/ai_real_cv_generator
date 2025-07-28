@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from ai import ask_gemini
 from db import save_user_data
 from generateDocs import generate_docx, generate_pdf
+from social_links import social_links_handler
 from user_analytics import analytics
 from feedback import feedback_conversation
 
@@ -87,11 +88,14 @@ def start(update: Update, context: CallbackContext) -> int:
         "photo_path": "", "template": "professional"
     }
     update.message.reply_text(
-        "📸 Please upload a professional profile photo (or type /skip to skip):",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Skip Photo", callback_data='skip_photo')]
-        ])
-    )
+    "📸 Please upload a professional profile photo (or type /skip to skip):\n\n"
+    "✅ Use /join to join our Nib International Bank community.\n"
+    "📝 Use t.me/ApplicationLetterByTade_bot to generate your application letter.",
+    reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("Skip Photo", callback_data='skip_photo')]
+    ])
+)
+
     return PHOTO
 
 def handle_comment(update: Update, context: CallbackContext):
@@ -391,6 +395,8 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
             text="🎉 Your professional CV is ready!\n"
                  "Use /start to create another CV.\n"
                  "use /feedback to provide feedback on this CV generation process."
+                 "USE /join to join our Nib International Bank community."
+                 "use t.me/ApplicationLetterByTade_bot to generate your application letter."
         )
         
         # Save to database
@@ -615,6 +621,9 @@ def main():
     updater = Updater(TELEGRAM_TOKEN)
     dp = updater.dispatcher
     dp.add_handler(feedback_conversation)
+    # Add social links handlers
+    for handler in social_links_handler():
+        dp.add_handler(handler)
       # 🔽 Register the comment handler
     dp.add_handler(CommandHandler("comment", handle_comment))
     conv_handler = ConversationHandler(
