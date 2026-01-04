@@ -37,6 +37,11 @@ from generateDocs import generate_docx, generate_pdf
 from social_links import social_links_handler
 from user_analytics import analytics
 from feedback import feedback_conversation
+from payment_gate import (
+    is_payment_required, set_payment_required,
+    is_user_paid, mark_user_paid, mark_user_unpaid,
+    list_paid_users, show_settings
+)
 
 # Read environment variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -48,6 +53,11 @@ except ValueError:
     logging.getLogger(__name__).warning("Invalid PORT value %r, using default 8443", _port_val)
     PORT = 8443
 ENV = os.getenv("ENV")
+_admin_id_val = os.getenv('ADMIN_USER_ID')
+try:
+    ADMIN_USER_ID = int(_admin_id_val) if _admin_id_val and _admin_id_val.strip() else None
+except ValueError:
+    ADMIN_USER_ID = None
 
 # Validate TELEGRAM token early and fail with a clear error if missing
 if not TELEGRAM_TOKEN or TELEGRAM_TOKEN.strip() == "":
@@ -629,6 +639,77 @@ def cancel(update: Update, context: CallbackContext) -> int:
     context.user_data.clear()
     return ConversationHandler.END
 
+
+def _is_admin(update: Update) -> bool:
+    user = update.effective_user
+    if not user:
+        return False
+    if ADMIN_USER_ID is None:
+        return False
+    try:
+        return int(user.id) == ADMIN_USER_ID
+    except Exception:
+        return False
+
+
+def admin_payment_enable(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    set_payment_required(True)
+    update.message.reply_text('Payment requirement enabled.')
+
+
+def admin_payment_disable(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    set_payment_required(False)
+    update.message.reply_text('Payment requirement disabled.')
+
+
+def admin_payment_status(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    settings = show_settings()
+    users = list_paid_users()
+    update.message.reply_text(f"Settings: {settings}\nPaid users: {len(users)}")
+
+
+def admin_mark_paid(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    args = context.args
+    if not args:
+        update.message.reply_text('Usage: /mark_paid <user_id>')
+        return
+    uid = args[0]
+    mark_user_paid(uid)
+    update.message.reply_text(f'Marked {uid} as paid')
+
+
+def admin_mark_unpaid(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    args = context.args
+    if not args:
+        update.message.reply_text('Usage: /mark_unpaid <user_id>')
+        return
+    uid = args[0]
+    mark_user_unpaid(uid)
+    update.message.reply_text(f'Marked {uid} as unpaid')
+
+
+def admin_list_paid(update: Update, context: CallbackContext):
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    users = list_paid_users()
+    update.message.reply_text('\n'.join(users) if users else '(no paid users)')
+
 def error_handler(update: Update, context: CallbackContext):
     """Log errors"""
     logger.error(f"Update {update} caused error {context.error}")
@@ -647,6 +728,13 @@ def main():
         dp.add_handler(handler)
       # 🔽 Register the comment handler
     dp.add_handler(CommandHandler("comment", handle_comment))
+        # Admin payment handlers (restricted by ADMIN_USERNAME env var)
+        dp.add_handler(CommandHandler('payment_enable', admin_payment_enable))
+        dp.add_handler(CommandHandler('payment_disable', admin_payment_disable))
+        dp.add_handler(CommandHandler('payment_status', admin_payment_status))
+        dp.add_handler(CommandHandler('mark_paid', admin_mark_paid))
+        dp.add_handler(CommandHandler('mark_unpaid', admin_mark_unpaid))
+        dp.add_handler(CommandHandler('list_paid', admin_list_paid))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
