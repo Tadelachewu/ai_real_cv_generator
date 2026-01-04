@@ -1,6 +1,7 @@
 import os
 import logging
 import sqlite3
+import sys
 
 
 from docx import Document
@@ -17,7 +18,18 @@ from telegram.ext import (
     ConversationHandler, CallbackContext, CallbackQueryHandler
 )
 from weasyprint import HTML, CSS
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
+
+# Ensure we prefer a repository .env when present. Compute project root early
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Load environment variables from .env in project root (if present)
+load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# If some vars are missing in the environment, fall back to parsing .env
+_dot = dotenv_values(os.path.join(BASE_DIR, '.env'))
+for k, v in (_dot.items() if _dot else []):
+    if k and (os.getenv(k) is None or os.getenv(k) == '') and v is not None:
+        os.environ[k] = v
 
 from ai import ask_gemini
 from db import save_user_data
@@ -26,12 +38,21 @@ from social_links import social_links_handler
 from user_analytics import analytics
 from feedback import feedback_conversation
 
-# Load environment variables
-load_dotenv()
+# Read environment variables
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 8443))
+_port_val = os.getenv("PORT")
+try:
+    PORT = int(_port_val) if _port_val and _port_val.strip() else 8443
+except ValueError:
+    logging.getLogger(__name__).warning("Invalid PORT value %r, using default 8443", _port_val)
+    PORT = 8443
 ENV = os.getenv("ENV")
+
+# Validate TELEGRAM token early and fail with a clear error if missing
+if not TELEGRAM_TOKEN or TELEGRAM_TOKEN.strip() == "":
+    logging.getLogger(__name__).error("TELEGRAM_BOT_TOKEN is not set — please add it to .env or pass it to the container")
+    sys.exit(1)
 
 # Logging setup
 logging.basicConfig(

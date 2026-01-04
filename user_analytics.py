@@ -13,12 +13,24 @@ logger = logging.getLogger(__name__)
 class UserAnalytics:
     def __init__(self):
         self.db_url = os.getenv('DATABASE_URL')
+        self.enabled = False
         if not self.db_url:
-            raise ValueError("DATABASE_URL environment variable not set")
-        self._init_db()
+            logger.warning("DATABASE_URL not set, analytics disabled")
+            return
+
+        try:
+            self._init_db()
+            self.enabled = True
+            logger.info("Analytics enabled (database connected)")
+        except Exception as e:
+            logger.exception("Failed to initialize analytics DB, analytics disabled: %s", e)
+            self.enabled = False
 
     @contextmanager
     def _get_cursor(self):
+        if not self.enabled:
+            raise RuntimeError("Database not available")
+
         conn = psycopg2.connect(self.db_url)
         try:
             cursor = conn.cursor()
@@ -110,10 +122,14 @@ class UserAnalytics:
 
     def log_action(self, user_source: Union[Update, int], action_type: str, action_data: Dict[str, Any] = None):
         """Log a user action with username"""
+        if not self.enabled:
+            logger.debug("Analytics disabled — skipping log_action")
+            return
+
         user_id, username, first_name, last_name = self._get_user_info(user_source)
         try:
             self._update_user_info(user_id, username, first_name, last_name)
-            
+
             with self._get_cursor() as cursor:
                 cursor.execute('''
                     INSERT INTO user_actions (user_id, action_type, action_data)
@@ -124,10 +140,14 @@ class UserAnalytics:
 
     def start_session(self, user_source: Union[Update, int]):
         """Record session start with username"""
+        if not self.enabled:
+            logger.debug("Analytics disabled — skipping start_session")
+            return
+
         user_id, username, first_name, last_name = self._get_user_info(user_source)
         try:
             self._update_user_info(user_id, username, first_name, last_name)
-            
+
             with self._get_cursor() as cursor:
                 cursor.execute('''
                     INSERT INTO user_sessions (user_id, username, session_start)
@@ -138,12 +158,16 @@ class UserAnalytics:
 
     def record_feedback(self, user_source: Union[Update, int], rating: int = None, comments: str = None):
         """Store user feedback with username"""
+        if not self.enabled:
+            logger.debug("Analytics disabled — skipping record_feedback")
+            return
+
         try:
             user_id, username, first_name, last_name = self._get_user_info(user_source)
             logger.info(f"Recording feedback for user {user_id}, rating: {rating}")
-            
+
             self._update_user_info(user_id, username, first_name, last_name)
-            
+
             with self._get_cursor() as cursor:
                 cursor.execute('''
                     INSERT INTO user_feedback (user_id, username, rating, comments)
