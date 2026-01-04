@@ -127,6 +127,23 @@ def start(update: Update, context: CallbackContext) -> int:
     ])
 )
 
+    # If the user is admin, show admin-only commands in the UI (text list)
+    try:
+        if _is_admin(update):
+            admin_text = (
+                "🔐 Admin commands available:\n"
+                "/payment_enable - enable payment requirement\n"
+                "/payment_disable - disable payment requirement\n"
+                "/payment_status - show payment settings\n"
+                "/mark_paid <user_id> - mark a user paid\n"
+                "/mark_unpaid <user_id> - remove paid status\n"
+                "/list_paid - list paid users"
+            )
+            update.message.reply_text(admin_text)
+    except Exception:
+        # non-fatal if admin check fails
+        pass
+
     return PHOTO
 
 def handle_comment(update: Update, context: CallbackContext):
@@ -710,6 +727,30 @@ def admin_list_paid(update: Update, context: CallbackContext):
     users = list_paid_users()
     update.message.reply_text('\n'.join(users) if users else '(no paid users)')
 
+
+def help_handler(update: Update, context: CallbackContext):
+    text = (
+        "Available commands:\n"
+        "/start - begin CV creation\n"
+        "/comment - leave a comment\n"
+        "/feedback - provide feedback\n"
+    )
+    try:
+        update.message.reply_text(text)
+        if _is_admin(update):
+            admin_text = (
+                "\nAdmin commands:\n"
+                "/payment_enable\n"
+                "/payment_disable\n"
+                "/payment_status\n"
+                "/mark_paid <user_id>\n"
+                "/mark_unpaid <user_id>\n"
+                "/list_paid\n"
+            )
+            update.message.reply_text(admin_text)
+    except Exception:
+        pass
+
 def error_handler(update: Update, context: CallbackContext):
     """Log errors"""
     logger.error(f"Update {update} caused error {context.error}")
@@ -735,6 +776,8 @@ def main():
     dp.add_handler(CommandHandler('mark_paid', admin_mark_paid))
     dp.add_handler(CommandHandler('mark_unpaid', admin_mark_unpaid))
     dp.add_handler(CommandHandler('list_paid', admin_list_paid))
+    # Help command (shows admin commands to admin only)
+    dp.add_handler(CommandHandler('help', lambda u, c: help_handler(u, c)))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
