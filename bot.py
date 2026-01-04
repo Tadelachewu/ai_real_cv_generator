@@ -728,13 +728,13 @@ def main():
         dp.add_handler(handler)
       # 🔽 Register the comment handler
     dp.add_handler(CommandHandler("comment", handle_comment))
-        # Admin payment handlers (restricted by ADMIN_USERNAME env var)
-        dp.add_handler(CommandHandler('payment_enable', admin_payment_enable))
-        dp.add_handler(CommandHandler('payment_disable', admin_payment_disable))
-        dp.add_handler(CommandHandler('payment_status', admin_payment_status))
-        dp.add_handler(CommandHandler('mark_paid', admin_mark_paid))
-        dp.add_handler(CommandHandler('mark_unpaid', admin_mark_unpaid))
-        dp.add_handler(CommandHandler('list_paid', admin_list_paid))
+    # Admin payment handlers (restricted by ADMIN_USER_ID env var)
+    dp.add_handler(CommandHandler('payment_enable', admin_payment_enable))
+    dp.add_handler(CommandHandler('payment_disable', admin_payment_disable))
+    dp.add_handler(CommandHandler('payment_status', admin_payment_status))
+    dp.add_handler(CommandHandler('mark_paid', admin_mark_paid))
+    dp.add_handler(CommandHandler('mark_unpaid', admin_mark_unpaid))
+    dp.add_handler(CommandHandler('list_paid', admin_list_paid))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
