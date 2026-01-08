@@ -5,13 +5,14 @@ def join_community(update: Update, context: CallbackContext):
     """Send social media links + confirmation button."""
     keyboard = [
         [InlineKeyboardButton("📢 Join Telegram", url="https://t.me/nibinternationalbanksc")],
-        [InlineKeyboardButton("🎵 Follow TikTok", url="https://www.tiktok.com/@nibinternationalbank")],
+        [InlineKeyboardButton("▶️ Subscribe YouTube", url="https://www.youtube.com/@EagleTube-ph6wh")],
+        [InlineKeyboardButton("🎵 Follow TikTok", url="https://www.tiktok.com/@coming_to_hacker")],
         [InlineKeyboardButton("✅ I've Joined", callback_data="joined_success")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     update.message.reply_text(
-        "🌐 Join Nib International Bank's official pages and confirm after joining:",
+        "🌐 Join our socials and confirm after joining:",
         reply_markup=reply_markup
     )
 
