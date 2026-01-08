@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Contact & Payment</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;margin:2rem}
+      .card{max-width:700px;margin:0 auto;padding:1.5rem;border:1px solid #ddd;border-radius:8px}
+      .btn{display:inline-block;padding:.6rem 1rem;background:#007bff;color:#fff;text-decoration:none;border-radius:4px}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Contact</h1>
+      <p>If you encounter any issue, contact us by phone or email:</p>
+      <ul>
+        <li>Phone: <a href="tel:{{ phone }}">{{ phone }}</a></li>
+        <li>Email: <a href="mailto:{{ email }}">{{ email }}</a></li>
+      </ul>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div>
+            {% for category, msg in messages %}
+              <div style="padding:.5rem;margin:.3rem 0;border-radius:4px;"
+                   {% if category == 'success' %}class="flash-success" style="background:#e6ffed;border:1px solid #b7f0c4"{% endif %}
+                   {% if category == 'error' %}class="flash-error" style="background:#ffe6e6;border:1px solid #f0b7b7"{% endif %}
+                   {% if category == 'warning' %}class="flash-warn" style="background:#fff7e6;border:1px solid #f0e0b7"{% endif %}>
+                {{ msg }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <h2>Send us an email</h2>
+      <form action="/contact/send" method="post">
+        <div>
+          <label for="name">Your name</label><br>
+          <input id="name" name="name" type="text" placeholder="Your name" style="width:100%">
+        </div>
+        <div>
+          <label for="email">Your email</label><br>
+          <input id="email" name="email" type="email" placeholder="you@example.com" required style="width:100%">
+        </div>
+        <div>
+          <label for="subject">Subject</label><br>
+          <input id="subject" name="subject" type="text" required style="width:100%">
+        </div>
+        <div>
+          <label for="message">Message</label><br>
+          <textarea id="message" name="message" rows="6" required style="width:100%"></textarea>
+        </div>
+        <div style="margin-top:.75rem">
+          <button class="btn" type="submit">Send Email</button>
+        </div>
+      </form>
+
+      {% if payment_enabled %}
+      <hr>
+      <h2>Payment required for unlimited access</h2>
+      <p>Please pay <strong>{{ amount_etb }} ETB</strong> to the CBE account below for unlimited access:</p>
+      <p><strong>Account:</strong> {{ cbe_account }}</p>
+      <p>You can use your bank's transfer service or mobile app to send the amount to the account above.</p>
+      <p>
+        <a class="btn" href="https://www.commercialbankofethiopia.com/transfer?account={{ cbe_account }}&amount={{ amount_etb }}" target="_blank">Pay Now / Redirect to payment</a>
+      </p>
+      <p>After payment, please contact us by phone or email to confirm and get unlimited access.</p>
+      {% else %}
+      <hr>
+      <p>Payment is currently not required. Contact us if you need assistance.</p>
+      {% endif %}
+    </div>
+  </body>
+</html>
