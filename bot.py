@@ -17,6 +17,8 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters,
     ConversationHandler, CallbackContext, CallbackQueryHandler
 )
+import smtplib
+from email.message import EmailMessage
 from weasyprint import HTML, CSS
 from dotenv import load_dotenv, dotenv_values
 
@@ -77,6 +79,9 @@ logger = logging.getLogger(__name__)
     SKILLS, LANGUAGES, PROJECTS, REVIEW, WAITING_CALLBACK, PHOTO,
     SELECT_TEMPLATE
 ) = range(13)
+
+# Contact conversation states (separate from CV creation states)
+CONTACT_NAME, CONTACT_EMAIL_C, CONTACT_SUBJECT, CONTACT_MESSAGE, CONTACT_CONFIRM = range(13, 18)
 
 # Initialize base directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -657,6 +662,97 @@ def cancel(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 
+def contact_start(update: Update, context: CallbackContext) -> int:
+    """Start contact flow inside the bot UI."""
+    phone = '0949847581'
+    email = os.environ.get('CONTACT_RECEIVER_EMAIL', 'tade2024bdu@gmail.com')
+    payment_enabled = is_payment_required()
+    cbe_account = '1000261725456'
+    amount_etb = 10
+
+    text = f"Contact:\nPhone: {phone}\nEmail: {email}\n"
+    if payment_enabled:
+        text += f"\nPayment required for unlimited access: pay {amount_etb} ETB to CBE account {cbe_account}.\n"
+    text += "\nIf you'd like to send us a message now, please enter your full name (or /cancel to stop):"
+    update.message.reply_text(text)
+    return CONTACT_NAME
+
+
+def contact_name(update: Update, context: CallbackContext) -> int:
+    context.user_data['contact_name'] = update.message.text.strip()
+    update.message.reply_text("Please enter your email address:")
+    return CONTACT_EMAIL_C
+
+
+def contact_email(update: Update, context: CallbackContext) -> int:
+    context.user_data['contact_email'] = update.message.text.strip()
+    update.message.reply_text("Subject:")
+    return CONTACT_SUBJECT
+
+
+def contact_subject(update: Update, context: CallbackContext) -> int:
+    context.user_data['contact_subject'] = update.message.text.strip()
+    update.message.reply_text("Message (type your message and send):")
+    return CONTACT_MESSAGE
+
+
+def contact_message(update: Update, context: CallbackContext) -> int:
+    name = context.user_data.get('contact_name', '')
+    sender = context.user_data.get('contact_email', '')
+    subject = context.user_data.get('contact_subject', '(no subject)')
+    body = update.message.text.strip()
+
+    # Compose email
+    full_body = f"From: {name} <{sender}>\n\n{body}"
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = os.environ.get('FROM_EMAIL', 'no-reply@example.com')
+    msg['To'] = os.environ.get('CONTACT_RECEIVER_EMAIL', 'tade2024bdu@gmail.com')
+    msg.set_content(full_body)
+
+    smtp_host = os.environ.get('SMTP_HOST')
+    smtp_port = int(os.environ.get('SMTP_PORT', '0') or 0)
+    smtp_user = os.environ.get('SMTP_USER')
+    smtp_pass = os.environ.get('SMTP_PASS')
+
+    try:
+        if smtp_host and smtp_port:
+            if smtp_user and smtp_pass:
+                server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+                server.login(smtp_user, smtp_pass)
+            else:
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+                server.starttls()
+            server.send_message(msg)
+            server.quit()
+            update.message.reply_text('✅ Message sent successfully. We will contact you shortly.')
+        else:
+            # Fallback save to disk
+            out_dir = os.path.join(BASE_DIR, 'sent_emails')
+            os.makedirs(out_dir, exist_ok=True)
+            idx = len(os.listdir(out_dir)) + 1
+            path = os.path.join(out_dir, f'message_{idx}.eml')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(f"To: {msg['To']}\nSubject: {msg['Subject']}\n\n{full_body}")
+            update.message.reply_text('⚠️ SMTP not configured; message saved locally for review.')
+    except Exception as e:
+        logger.error(f"Contact email failed: {e}")
+        update.message.reply_text(f'❌ Failed to send message: {e}')
+
+    # clean contact data
+    for k in ['contact_name', 'contact_email', 'contact_subject']:
+        context.user_data.pop(k, None)
+
+    return ConversationHandler.END
+
+
+def contact_cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text('Contact flow cancelled.')
+    for k in ['contact_name', 'contact_email', 'contact_subject']:
+        context.user_data.pop(k, None)
+    return ConversationHandler.END
+
+
 def _is_admin(update: Update) -> bool:
     user = update.effective_user
     if not user:
@@ -769,6 +865,19 @@ def main():
         dp.add_handler(handler)
       # 🔽 Register the comment handler
     dp.add_handler(CommandHandler("comment", handle_comment))
+    # Contact flow inside Telegram (collects message and sends via SMTP or saves locally)
+    contact_conv = ConversationHandler(
+        entry_points=[CommandHandler('contact', contact_start)],
+        states={
+            CONTACT_NAME: [MessageHandler(Filters.text & ~Filters.command, contact_name)],
+            CONTACT_EMAIL_C: [MessageHandler(Filters.text & ~Filters.command, contact_email)],
+            CONTACT_SUBJECT: [MessageHandler(Filters.text & ~Filters.command, contact_subject)],
+            CONTACT_MESSAGE: [MessageHandler(Filters.text & ~Filters.command, contact_message)],
+        },
+        fallbacks=[CommandHandler('cancel', contact_cancel)],
+        allow_reentry=True
+    )
+    dp.add_handler(contact_conv)
     # Admin payment handlers (restricted by ADMIN_USER_ID env var)
     dp.add_handler(CommandHandler('payment_enable', admin_payment_enable))
     dp.add_handler(CommandHandler('payment_disable', admin_payment_disable))
