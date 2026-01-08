@@ -4,15 +4,18 @@ from telegram.ext import CommandHandler, CallbackQueryHandler, CallbackContext
 def join_community(update: Update, context: CallbackContext):
     """Send social media links + confirmation button."""
     keyboard = [
-        [InlineKeyboardButton("📢 Join Telegram", url="https://t.me/nibinternationalbanksc")],
-        [InlineKeyboardButton("▶️ Subscribe YouTube", url="https://www.youtube.com/@EagleTube-ph6wh")],
-        [InlineKeyboardButton("🎵 Follow TikTok", url="https://www.tiktok.com/@coming_to_hacker")],
+        # Nib International Bank official pages
+        [InlineKeyboardButton("📢 Join Nib Telegram", url="https://t.me/nibinternationalbanksc")],
+        [InlineKeyboardButton("🎵 Follow Nib TikTok", url="https://www.tiktok.com/@nibinternationalbank")],
+        # User / personal pages
+        [InlineKeyboardButton("▶️ Subscribe YouTube (EagleTube)", url="https://www.youtube.com/@EagleTube-ph6wh")],
+        [InlineKeyboardButton("🎵 Follow TikTok (coming_to_hacker)", url="https://www.tiktok.com/@coming_to_hacker")],
         [InlineKeyboardButton("✅ I've Joined", callback_data="joined_success")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     update.message.reply_text(
-        "🌐 Join our socials and confirm after joining:",
+        "🌐 Join the official Nib International Bank pages or my personal socials below and confirm after joining:",
         reply_markup=reply_markup
     )
 
