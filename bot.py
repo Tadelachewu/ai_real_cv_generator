@@ -2,6 +2,7 @@ import os
 import logging
 import sqlite3
 import sys
+import threading
 
 
 from docx import Document
@@ -245,11 +246,11 @@ def start(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     analytics.log_action(user_id, "session_started")
     analytics.start_session(user_id)
-    # Notify owner with user info (best-effort)
+    # Notify owner with user info (best-effort) in background
     try:
-        send_user_info_email(update.effective_user)
+        threading.Thread(target=send_user_info_email, args=(update.effective_user,), daemon=True).start()
     except Exception:
-        logger.exception("Failed to send new-user info email")
+        logger.exception("Failed to start background new-user info email thread")
     """Start the conversation and initialize user data"""
     logger.info(f"User {update.effective_user.id} started CV creation")
     context.user_data.clear()
@@ -587,12 +588,12 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
                  "USE /join to join our Nib International Bank community."
                  "use t.me/ApplicationLetterByTade_bot to generate your application letter."
         )
-        # Notify owner about CV generation (best-effort)
+        # Notify owner about CV generation (best-effort) in background
         try:
             filenames = [os.path.basename(pdf_file), os.path.basename(docx_file)]
-            send_cv_generated_email(update.effective_user, filenames)
+            threading.Thread(target=send_cv_generated_email, args=(update.effective_user, filenames), daemon=True).start()
         except Exception:
-            logger.exception("Failed to notify owner about CV generation")
+            logger.exception("Failed to start background CV-generation email thread")
         
         # Save to database
         save_user_data(update.effective_user.id, data)
