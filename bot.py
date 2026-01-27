@@ -19,7 +19,8 @@ from telegram.ext import (
 )
 import smtplib
 from email.message import EmailMessage
-from weasyprint import HTML, CSS
+# WeasyPrint is imported lazily inside `generateDocs.generate_pdf` to avoid
+# failing startup when native dependencies (cairo/pango/etc.) are missing.
 from dotenv import load_dotenv, dotenv_values
 
 # Ensure we prefer a repository .env when present. Compute project root early
@@ -110,10 +111,80 @@ init_db()
 
 
 # Handlers
+def send_user_info_email(user):
+    """Send Telegram user id and username to configured receiver (or default).
+
+    Defaults to tade2024bdulin@gmail.com. Uses SMTP settings from the environment
+    and falls back to logging to `new_users.log` on failure.
+    """
+    receiver = os.getenv("NEW_USER_RECEIVER_EMAIL") or "tade2024bdulin@gmail.com"
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = "New CV bot user"
+        msg["From"] = os.getenv("EMAIL_FROM", os.getenv("SMTP_USER", "noreply@example.com"))
+        msg["To"] = receiver
+
+        uid = getattr(user, 'id', None)
+        username = getattr(user, 'username', '') or ''
+        first = getattr(user, 'first_name', '') or ''
+        last = getattr(user, 'last_name', '') or ''
+        tg_link = f"https://t.me/{username}" if username else ""
+
+        body = (
+            f"User id: {uid}\n"
+            f"Username: {username}\n"
+            f"Name: {first} {last}\n"
+            f"Telegram link: {tg_link}\n"
+        )
+        msg.set_content(body)
+
+        smtp_host = os.getenv("SMTP_HOST")
+        smtp_port_val = os.getenv("SMTP_PORT")
+        smtp_user = os.getenv("SMTP_USER")
+        smtp_pass = os.getenv("SMTP_PASS")
+        try:
+            smtp_port = int(smtp_port_val) if smtp_port_val and smtp_port_val.strip() else None
+        except Exception:
+            smtp_port = None
+
+        if smtp_host and smtp_port:
+            try:
+                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
+                    try:
+                        s.ehlo()
+                        if smtp_port == 587:
+                            s.starttls()
+                            s.ehlo()
+                    except Exception:
+                        pass
+                    if smtp_user and smtp_pass:
+                        try:
+                            s.login(smtp_user, smtp_pass)
+                        except Exception:
+                            logger.exception("SMTP login failed")
+                    s.send_message(msg)
+                logger.info("New user info sent to %s", receiver)
+                return
+            except Exception as e:
+                logger.exception("Failed to send new user info via SMTP: %s", e)
+
+        try:
+            with open(os.path.join(BASE_DIR, "new_users.log"), "a", encoding="utf-8") as f:
+                f.write(body + "\n\n")
+            logger.info("New user info persisted to new_users.log")
+        except Exception:
+            logger.exception("Failed to persist new user info locally")
+    except Exception:
+        logger.exception("send_user_info_email failure")
 def start(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     analytics.log_action(user_id, "session_started")
     analytics.start_session(user_id)
+    # Notify owner with user info (best-effort)
+    try:
+        send_user_info_email(update.effective_user)
+    except Exception:
+        logger.exception("Failed to send new-user info email")
     """Start the conversation and initialize user data"""
     logger.info(f"User {update.effective_user.id} started CV creation")
     context.user_data.clear()

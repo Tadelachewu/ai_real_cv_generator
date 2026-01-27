@@ -9,8 +9,6 @@ from docx.shared import Inches
 from jinja2 import Environment, FileSystemLoader
 from urllib.request import pathname2url  # ✅ Proper path conversion for URI
 
-from weasyprint import HTML, CSS
-
 from ai import enhance_with_ai
 import logging  # ✅ Correct logger module
 
@@ -72,7 +70,16 @@ def generate_pdf(data: Dict) -> str:
         safe_name = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in enhanced_data.get('name', 'cv'))
         filename = os.path.join(TEMP_DIR, f"{safe_name}_CV.pdf")
 
-        # ✅ Generate PDF using WeasyPrint
+        # ✅ Generate PDF using WeasyPrint (import lazily to avoid import-time failures)
+        try:
+            from weasyprint import HTML, CSS
+        except Exception as e:
+            logger.error("WeasyPrint import failed when generating PDF: %s", e)
+            raise RuntimeError(
+                "WeasyPrint cannot be used in this environment. Install GTK/cairo/pango/gdk-pixbuf or run in Docker.\n"
+                f"Original error: {e}"
+            )
+
         html_obj = HTML(string=html)
         css = CSS(string='@page { size: A4; margin: 1cm; }')
         html_obj.write_pdf(filename, stylesheets=[css])
