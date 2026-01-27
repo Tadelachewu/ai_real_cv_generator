@@ -587,12 +587,12 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
                  "USE /join to join our Nib International Bank community."
                  "use t.me/ApplicationLetterByTade_bot to generate your application letter."
         )
-            # Notify owner about CV generation (best-effort)
-            try:
-                filenames = [os.path.basename(pdf_file), os.path.basename(docx_file)]
-                send_cv_generated_email(update.effective_user, filenames)
-            except Exception:
-                logger.exception("Failed to notify owner about CV generation")
+        # Notify owner about CV generation (best-effort)
+        try:
+            filenames = [os.path.basename(pdf_file), os.path.basename(docx_file)]
+            send_cv_generated_email(update.effective_user, filenames)
+        except Exception:
+            logger.exception("Failed to notify owner about CV generation")
         
         # Save to database
         save_user_data(update.effective_user.id, data)
