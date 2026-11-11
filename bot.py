@@ -1054,6 +1054,81 @@ def error_handler(update: Update, context: CallbackContext):
     except Exception:
         logger.exception("Failed to notify user about error")
 
+USER_COMMANDS = [
+    ("start", "Create a new CV"),
+    ("last", "Reuse your last CV (edit / new template)"),
+    ("skip", "Skip the photo step"),
+    ("cancel", "Cancel the current step"),
+    ("contact", "Contact us / send a message"),
+    ("feedback", "Rate the bot"),
+    ("comment", "Leave a comment"),
+    ("join", "Join our community"),
+    ("help", "Show all commands"),
+]
+
+ADMIN_COMMANDS = [
+    ("payment_status", "Admin: payment status & storage"),
+    ("payment_enable", "Admin: require payment"),
+    ("payment_disable", "Admin: disable payment"),
+    ("mark_paid", "Admin: mark user paid <user_id>"),
+    ("mark_unpaid", "Admin: remove paid <user_id>"),
+    ("list_paid", "Admin: list paid users"),
+    ("test_email", "Admin: send a test email"),
+]
+
+BOT_DESCRIPTION = (
+    "📄 AI CV Generator\n\n"
+    "Answer a few simple questions and get a professional CV in minutes. "
+    "AI polishes your summary and experience, and you receive PDF + DOCX files "
+    "in 4 designs (Professional, Creative, Modern Tech, Academic).\n\n"
+    "Press Start to begin."
+)
+BOT_SHORT_DESCRIPTION = "AI CV builder: answer a few questions, get a professional PDF + DOCX CV in minutes."
+
+
+def configure_bot_profile(bot):
+    """Set the command menu and bot descriptions on every startup.
+
+    Normal users see USER_COMMANDS; the admin's private chat also shows
+    ADMIN_COMMANDS. Re-applying on each start also overwrites anything
+    changed by someone else through the Bot API.
+    """
+    from telegram import (
+        BotCommand, BotCommandScopeDefault, BotCommandScopeAllPrivateChats,
+        BotCommandScopeAllGroupChats, BotCommandScopeAllChatAdministrators,
+        BotCommandScopeChat,
+    )
+    import requests
+
+    user_cmds = [BotCommand(c, d) for c, d in USER_COMMANDS]
+    admin_cmds = user_cmds + [BotCommand(c, d) for c, d in ADMIN_COMMANDS]
+    try:
+        # Clear other scopes so only our lists apply
+        for scope in (BotCommandScopeAllPrivateChats(), BotCommandScopeAllGroupChats(),
+                      BotCommandScopeAllChatAdministrators()):
+            bot.delete_my_commands(scope=scope)
+        bot.set_my_commands(user_cmds, scope=BotCommandScopeDefault())
+        if ADMIN_USER_ID:
+            bot.set_my_commands(admin_cmds, scope=BotCommandScopeChat(chat_id=ADMIN_USER_ID))
+        logger.info("Bot command menu configured (%d user, %d admin commands)",
+                    len(user_cmds), len(admin_cmds) if ADMIN_USER_ID else 0)
+    except Exception:
+        logger.exception("Failed to configure bot commands")
+
+    # python-telegram-bot 13.x has no wrapper for these methods; call the API directly.
+    api = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+    for method, payload in (
+        ("setMyDescription", {"description": BOT_DESCRIPTION}),
+        ("setMyShortDescription", {"short_description": BOT_SHORT_DESCRIPTION}),
+    ):
+        try:
+            r = requests.post(f"{api}/{method}", json=payload, timeout=15)
+            if not r.json().get("ok"):
+                logger.warning("%s failed: %s", method, r.json().get("description"))
+        except Exception as e:
+            logger.warning("%s failed: %s", method, type(e).__name__)  # never log the URL (contains token)
+
+
 def main():
     """Start the bot"""
     # Connect persistent storage early so the startup log shows its status
@@ -1061,6 +1136,7 @@ def main():
     if not pg_store.available():
         logger.warning("Persistent storage: Postgres unavailable - using local files (data resets on redeploy)")
     updater = Updater(TELEGRAM_TOKEN)
+    configure_bot_profile(updater.bot)
     dp = updater.dispatcher
     dp.add_handler(feedback_conversation)
     # Add social links handlers
