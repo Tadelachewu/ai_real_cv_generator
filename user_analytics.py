@@ -19,8 +19,10 @@ class UserAnalytics:
             return
 
         try:
-            self._init_db()
+            # _get_cursor() refuses to run while disabled, so enable first
+            # and roll back if the schema setup fails.
             self.enabled = True
+            self._init_db()
             logger.info("Analytics enabled (database connected)")
         except Exception as e:
             logger.exception("Failed to initialize analytics DB, analytics disabled: %s", e)

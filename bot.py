@@ -3,11 +3,9 @@ import logging
 import sqlite3
 import sys
 import threading
+import re
+from datetime import datetime
 
-
-from docx import Document
-
-from telegram.ext import ContextTypes
 from db_comments import save_user_comment
 
 from telegram import (
@@ -36,7 +34,7 @@ for k, v in (_dot.items() if _dot else []):
         os.environ[k] = v
 
 from ai import ask_gemini
-from db import save_user_data
+from db import save_user_data, load_user_data
 from generateDocs import generate_docx, generate_pdf
 from social_links import social_links_handler
 from user_analytics import analytics
@@ -112,146 +110,128 @@ init_db()
 
 
 # Handlers
+def _env_recipients(*names: str) -> list[str]:
+    """Return the first non-empty recipient list among the given env vars.
+
+    Values may hold several addresses separated by commas.
+    """
+    for name in names:
+        val = (os.getenv(name) or "").strip()
+        if val:
+            return [a.strip() for a in val.split(",") if a.strip()]
+    return []
+
+
+def send_email(subject: str, body: str, recipients: list[str], reply_to: str | None = None,
+               fallback_log: str = "unsent_emails.log") -> bool:
+    """Send a plain-text email using SMTP settings from the environment.
+
+    Port 465 uses implicit SSL, any other port uses STARTTLS when offered.
+    On any failure the message is appended to `fallback_log` so nothing is lost.
+    Returns True when the email was actually delivered to the SMTP server.
+    """
+    smtp_host = (os.getenv("SMTP_HOST") or "").strip()
+    smtp_user = (os.getenv("SMTP_USER") or "").strip()
+    smtp_pass = (os.getenv("SMTP_PASS") or "").strip()
+    try:
+        smtp_port = int((os.getenv("SMTP_PORT") or "587").strip())
+    except ValueError:
+        smtp_port = 587
+
+    sent = False
+    if not recipients:
+        logger.warning("No recipient email configured for %r (set it in .env)", subject)
+    elif not smtp_host:
+        logger.warning("SMTP_HOST not set; cannot send %r", subject)
+    else:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = os.getenv("EMAIL_FROM") or smtp_user or "noreply@example.com"
+        msg["To"] = ", ".join(recipients)
+        if reply_to:
+            msg["Reply-To"] = reply_to
+        msg.set_content(body)
+        try:
+            if smtp_port == 465:
+                server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+            else:
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            with server as s:
+                s.ehlo()
+                if smtp_port != 465 and s.has_extn("starttls"):
+                    s.starttls()
+                    s.ehlo()
+                if smtp_user and smtp_pass:
+                    s.login(smtp_user, smtp_pass)
+                s.send_message(msg)
+            sent = True
+            logger.info("Email %r sent to %s", subject, msg["To"])
+        except Exception:
+            logger.exception("Failed to send email %r via SMTP", subject)
+
+    if not sent:
+        try:
+            with open(os.path.join(BASE_DIR, fallback_log), "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}] To: {', '.join(recipients) or '(none)'}\n"
+                        f"Subject: {subject}\n{body}\n\n")
+        except Exception:
+            logger.exception("Failed to persist unsent email locally")
+    return sent
+
+
+def send_email_async(*args, **kwargs):
+    """Fire-and-forget wrapper so SMTP latency never blocks the bot."""
+    threading.Thread(target=send_email, args=args, kwargs=kwargs, daemon=True).start()
+
+
+def _describe_user(user) -> str:
+    uid = getattr(user, 'id', None)
+    username = getattr(user, 'username', '') or ''
+    first = getattr(user, 'first_name', '') or ''
+    last = getattr(user, 'last_name', '') or ''
+    tg_link = f"https://t.me/{username}" if username else "(no username)"
+    return (
+        f"User id: {uid}\n"
+        f"Username: {username}\n"
+        f"Name: {first} {last}\n"
+        f"Telegram link: {tg_link}\n"
+        f"Time (UTC): {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}\n"
+    )
+
+
 def send_user_info_email(user):
-    """Send Telegram user id and username to configured receiver (or default).
+    """Notify the owner (NOTIFY_RECEIVER_EMAIL) that a user ran /start."""
+    send_email_async(
+        "New CV bot user",
+        _describe_user(user),
+        _env_recipients("NOTIFY_RECEIVER_EMAIL", "NEW_USER_RECEIVER_EMAIL", "ADMIN_EMAIL"),
+        fallback_log="new_users.log",
+    )
 
-    Defaults to tade2024bdulin@gmail.com. Uses SMTP settings from the environment
-    and falls back to logging to `new_users.log` on failure.
-    """
-    receiver = os.getenv("NEW_USER_RECEIVER_EMAIL") or "tade2024bdulin@gmail.com"
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = "New CV bot user"
-        msg["From"] = os.getenv("EMAIL_FROM", os.getenv("SMTP_USER", "noreply@example.com"))
-        msg["To"] = receiver
 
-        uid = getattr(user, 'id', None)
-        username = getattr(user, 'username', '') or ''
-        first = getattr(user, 'first_name', '') or ''
-        last = getattr(user, 'last_name', '') or ''
-        tg_link = f"https://t.me/{username}" if username else ""
+def send_cv_generated_email(user, cv_names: list[str], template: str = ""):
+    """Notify the owner (NOTIFY_RECEIVER_EMAIL) that a CV was generated."""
+    body = (
+        _describe_user(user)
+        + f"Template: {template}\n\nGenerated files:\n" + "\n".join(cv_names) + "\n"
+    )
+    send_email_async(
+        "cv gen",
+        body,
+        _env_recipients("NOTIFY_RECEIVER_EMAIL", "NEW_USER_RECEIVER_EMAIL", "ADMIN_EMAIL"),
+        fallback_log="cv_generations.log",
+    )
 
-        body = (
-            f"User id: {uid}\n"
-            f"Username: {username}\n"
-            f"Name: {first} {last}\n"
-            f"Telegram link: {tg_link}\n"
-        )
-        msg.set_content(body)
 
-        smtp_host = os.getenv("SMTP_HOST")
-        smtp_port_val = os.getenv("SMTP_PORT")
-        smtp_user = os.getenv("SMTP_USER")
-        smtp_pass = os.getenv("SMTP_PASS")
-        try:
-            smtp_port = int(smtp_port_val) if smtp_port_val and smtp_port_val.strip() else None
-        except Exception:
-            smtp_port = None
-
-        if smtp_host and smtp_port:
-            try:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
-                    try:
-                        s.ehlo()
-                        if smtp_port == 587:
-                            s.starttls()
-                            s.ehlo()
-                    except Exception:
-                        pass
-                    if smtp_user and smtp_pass:
-                        try:
-                            s.login(smtp_user, smtp_pass)
-                        except Exception:
-                            logger.exception("SMTP login failed")
-                    s.send_message(msg)
-                logger.info("New user info sent to %s", receiver)
-                return
-            except Exception as e:
-                logger.exception("Failed to send new user info via SMTP: %s", e)
-
-        try:
-            with open(os.path.join(BASE_DIR, "new_users.log"), "a", encoding="utf-8") as f:
-                f.write(body + "\n\n")
-            logger.info("New user info persisted to new_users.log")
-        except Exception:
-            logger.exception("Failed to persist new user info locally")
-    except Exception:
-        logger.exception("send_user_info_email failure")
-
-def send_cv_generated_email(user, cv_names: list[str]):
-    """Notify owner that a CV was generated by a user.
-
-    Subject will be 'cv gen'. Includes user id, username and generated filenames.
-    """
-    receiver = os.getenv("NEW_USER_RECEIVER_EMAIL") or "tade2024bdulin@gmail.com"
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = "cv gen"
-        msg["From"] = os.getenv("EMAIL_FROM", os.getenv("SMTP_USER", "noreply@example.com"))
-        msg["To"] = receiver
-
-        uid = getattr(user, 'id', None)
-        username = getattr(user, 'username', '') or ''
-        first = getattr(user, 'first_name', '') or ''
-        last = getattr(user, 'last_name', '') or ''
-
-        body = (
-            f"User id: {uid}\n"
-            f"Username: {username}\n"
-            f"Name: {first} {last}\n\n"
-            f"Generated files:\n" + "\n".join(cv_names) + "\n"
-        )
-        msg.set_content(body)
-
-        smtp_host = os.getenv("SMTP_HOST")
-        smtp_port_val = os.getenv("SMTP_PORT")
-        smtp_user = os.getenv("SMTP_USER")
-        smtp_pass = os.getenv("SMTP_PASS")
-        try:
-            smtp_port = int(smtp_port_val) if smtp_port_val and smtp_port_val.strip() else None
-        except Exception:
-            smtp_port = None
-
-        if smtp_host and smtp_port:
-            try:
-                with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
-                    try:
-                        s.ehlo()
-                        if smtp_port == 587:
-                            s.starttls()
-                            s.ehlo()
-                    except Exception:
-                        pass
-                    if smtp_user and smtp_pass:
-                        try:
-                            s.login(smtp_user, smtp_pass)
-                        except Exception:
-                            logger.exception("SMTP login failed")
-                    s.send_message(msg)
-                logger.info("CV generation info sent to %s", receiver)
-                return
-            except Exception as e:
-                logger.exception("Failed to send CV generation info via SMTP: %s", e)
-
-        # Fallback: persist to a local log file
-        try:
-            with open(os.path.join(BASE_DIR, "cv_generations.log"), "a", encoding="utf-8") as f:
-                f.write(body + "\n\n")
-            logger.info("CV generation info persisted to cv_generations.log")
-        except Exception:
-            logger.exception("Failed to persist cv generation info locally")
-    except Exception:
-        logger.exception("send_cv_generated_email failure")
 def start(update: Update, context: CallbackContext) -> int:
     user_id = update.effective_user.id
     analytics.log_action(user_id, "session_started")
     analytics.start_session(user_id)
-    # Notify owner with user info (best-effort) in background
+    # Notify owner with user info (best-effort, runs in background)
     try:
-        threading.Thread(target=send_user_info_email, args=(update.effective_user,), daemon=True).start()
+        send_user_info_email(update.effective_user)
     except Exception:
-        logger.exception("Failed to start background new-user info email thread")
-    """Start the conversation and initialize user data"""
+        logger.exception("Failed to start background new-user info email")
     logger.info(f"User {update.effective_user.id} started CV creation")
     context.user_data.clear()
     context.user_data['cv_data'] = {
@@ -262,6 +242,7 @@ def start(update: Update, context: CallbackContext) -> int:
     }
     update.message.reply_text(
     "📸 Please upload a professional profile photo (or type /skip to skip):\n\n"
+    "♻️ Already made a CV here? Use /last to reuse your saved details.\n"
     "✅ Use /join to join our Nib International Bank community.\n"
     "📝 Use t.me/ApplicationLetterByTade_bot to generate your application letter.",
     reply_markup=InlineKeyboardMarkup([
@@ -351,6 +332,57 @@ def skip_photo(update: Update, context: CallbackContext) -> int:
         update.message.reply_text("👍 No photo will be included. What's your full name?")
     return NAME
 
+
+def photo_expected(update: Update, context: CallbackContext) -> int:
+    """User sent text/other content while we wait for a photo."""
+    update.message.reply_text(
+        "📸 Please send a photo (as an image, not a file), or type /skip to continue without one."
+    )
+    return PHOTO
+
+
+def _split_fields(text: str, count: int) -> list[str]:
+    """Split 'a - b - c' style input into exactly `count` fields.
+
+    Separators are a dash/en-dash/em-dash/pipe surrounded by spaces, so values
+    like '2020-2023' or 'Front-end' are kept intact. Extra separators are
+    merged into the last field (e.g. a description containing ' - ').
+    """
+    parts = [p.strip() for p in re.split(r"\s+[-–—|]\s+", text.strip())]
+    parts = [p for p in parts if p]
+    if len(parts) < count:
+        # Fallback for inputs written without spaces, e.g. "Dev-Google-2020-desc"
+        parts = [p.strip() for p in text.split('-', count - 1) if p.strip()]
+    if len(parts) > count:
+        parts = parts[:count - 1] + [" - ".join(parts[count - 1:])]
+    return parts
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def resume_last_cv(update: Update, context: CallbackContext) -> int:
+    """Load the user's previously saved CV data and jump to the review screen."""
+    saved = load_user_data(update.effective_user.id)
+    if not saved or not isinstance(saved, dict):
+        update.message.reply_text("ℹ️ No saved CV found yet. Use /start to create one.")
+        return ConversationHandler.END
+    analytics.log_action(update.effective_user.id, "cv_resumed")
+    cv = {
+        "name": "", "email": "", "phone": "", "summary": "",
+        "experience": [], "education": [],
+        "skills": [], "languages": [], "projects": [],
+        "photo_path": "", "template": "professional"
+    }
+    cv.update(saved)
+    # The photo file is removed after each generation; drop stale paths.
+    if cv.get("photo_path") and not os.path.exists(cv["photo_path"]):
+        cv["photo_path"] = ""
+    context.user_data.clear()
+    context.user_data['cv_data'] = cv
+    update.message.reply_text("♻️ Loaded your last CV. Edit anything below or generate it with a new template.")
+    return review(update, context)
+
 def get_name(update: Update, context: CallbackContext) -> int:
     """Get user's name"""
     text = update.message.text.strip()
@@ -366,8 +398,11 @@ def get_name(update: Update, context: CallbackContext) -> int:
 def get_email(update: Update, context: CallbackContext) -> int:
     """Get user's email"""
     text = update.message.text.strip()
+    if not _EMAIL_RE.match(text):
+        update.message.reply_text("❗ That doesn't look like a valid email. Please try again (e.g. name@example.com):")
+        return EMAIL
     context.user_data['cv_data']['email'] = text
-    
+
     if 'editing_field' in context.user_data:
         del context.user_data['editing_field']
         return review(update, context)
@@ -408,8 +443,8 @@ def get_summary(update: Update, context: CallbackContext) -> int:
 def get_experience(update: Update, context: CallbackContext) -> int:
     """Add work experience"""
     text = update.message.text.strip()
-    parts = [part.strip() for part in text.split('-', 3)]
-    
+    parts = _split_fields(text, 4)
+
     if len(parts) != 4:
         update.message.reply_text(
             "❗ Please use format: Role - Company - Years - Description\n\n"
@@ -444,8 +479,8 @@ def get_experience(update: Update, context: CallbackContext) -> int:
 def get_education(update: Update, context: CallbackContext) -> int:
     """Add education"""
     text = update.message.text.strip()
-    parts = [part.strip() for part in text.split('-', 2)]
-    
+    parts = _split_fields(text, 3)
+
     if len(parts) != 3:
         update.message.reply_text(
             "❗ Please use format: Degree - Institution - Years\n\n"
@@ -510,8 +545,8 @@ def get_languages(update: Update, context: CallbackContext) -> int:
 def get_projects(update: Update, context: CallbackContext) -> int:
     """Add projects"""
     text = update.message.text.strip()
-    parts = [part.strip() for part in text.split('-', 2)]
-    
+    parts = _split_fields(text, 3)
+
     if len(parts) != 3:
         update.message.reply_text(
             "❗ Please use format: Name - Description - Technologies\n\n"
@@ -526,7 +561,11 @@ def get_projects(update: Update, context: CallbackContext) -> int:
         'technologies': parts[2]
     }
     context.user_data['cv_data']['projects'].append(project)
-    
+
+    if 'editing_field' in context.user_data:
+        del context.user_data['editing_field']
+        return review(update, context)
+
     keyboard = [
         [InlineKeyboardButton("➕ Add Another", callback_data='add_project')],
         [InlineKeyboardButton("✅ Done", callback_data='finish_projects')]
@@ -540,10 +579,12 @@ def get_projects(update: Update, context: CallbackContext) -> int:
 def generate_cv(update: Update, context: CallbackContext) -> int:
     """Generate and send the CV files"""
     user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
     analytics.log_action(user_id, "cv_generated", {
         "template": context.user_data['cv_data']['template']
     })
     try:
+        context.bot.send_message(chat_id=chat_id, text="⏳ Generating your CV, please wait...")
         # Handle both callback and message updates
         if update.callback_query:
             query = update.callback_query
@@ -582,18 +623,19 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
         
         context.bot.send_message(
             chat_id=chat_id,
-            text="🎉 Your professional CV is ready!\n"
-                 "Use /start to create another CV.\n"
-                 "use /feedback to provide feedback on this CV generation process."
-                 "USE /join to join our Nib International Bank community."
-                 "use t.me/ApplicationLetterByTade_bot to generate your application letter."
+            text="🎉 Your professional CV is ready!\n\n"
+                 "♻️ Use /last to regenerate it with another template.\n"
+                 "🆕 Use /start to create another CV.\n"
+                 "📝 Use /feedback to rate this CV generation process.\n"
+                 "✅ Use /join to join our Nib International Bank community.\n"
+                 "✉️ Use t.me/ApplicationLetterByTade_bot to generate your application letter."
         )
-        # Notify owner about CV generation (best-effort) in background
+        # Notify owner about CV generation (best-effort, runs in background)
         try:
             filenames = [os.path.basename(pdf_file), os.path.basename(docx_file)]
-            threading.Thread(target=send_cv_generated_email, args=(update.effective_user, filenames), daemon=True).start()
+            send_cv_generated_email(update.effective_user, filenames, data.get('template', ''))
         except Exception:
-            logger.exception("Failed to start background CV-generation email thread")
+            logger.exception("Failed to start background CV-generation email")
         
         # Save to database
         save_user_data(update.effective_user.id, data)
@@ -601,7 +643,7 @@ def generate_cv(update: Update, context: CallbackContext) -> int:
         return ConversationHandler.END
         
     except Exception as e:
-        logger.error(f"CV generation failed: {e}")
+        logger.exception(f"CV generation failed: {e}")
         context.bot.send_message(
             chat_id=chat_id,
             text="❌ Failed to generate CV. Please try again."
@@ -807,8 +849,9 @@ def cancel(update: Update, context: CallbackContext) -> int:
 
 def contact_start(update: Update, context: CallbackContext) -> int:
     """Start contact flow inside the bot UI."""
-    phone = '0949847581'
-    email = os.environ.get('CONTACT_RECEIVER_EMAIL', 'tade2024bdu@gmail.com')
+    phone = os.environ.get('CONTACT_PHONE', '0949847581')
+    recipients = _env_recipients('CONTACT_RECEIVER_EMAIL', 'ADMIN_EMAIL')
+    email = recipients[0] if recipients else '(not configured)'
     payment_enabled = is_payment_required()
     cbe_account = '1000261725456'
     amount_etb = 10
@@ -828,7 +871,11 @@ def contact_name(update: Update, context: CallbackContext) -> int:
 
 
 def contact_email(update: Update, context: CallbackContext) -> int:
-    context.user_data['contact_email'] = update.message.text.strip()
+    text = update.message.text.strip()
+    if not _EMAIL_RE.match(text):
+        update.message.reply_text("❗ Please enter a valid email address (e.g. name@example.com):")
+        return CONTACT_EMAIL_C
+    context.user_data['contact_email'] = text
     update.message.reply_text("Subject:")
     return CONTACT_SUBJECT
 
@@ -845,42 +892,22 @@ def contact_message(update: Update, context: CallbackContext) -> int:
     subject = context.user_data.get('contact_subject', '(no subject)')
     body = update.message.text.strip()
 
-    # Compose email
-    full_body = f"From: {name} <{sender}>\n\n{body}"
-    msg = EmailMessage()
-    msg['Subject'] = subject
-    msg['From'] = os.environ.get('FROM_EMAIL', 'no-reply@example.com')
-    msg['To'] = os.environ.get('CONTACT_RECEIVER_EMAIL', 'tade2024bdu@gmail.com')
-    msg.set_content(full_body)
-
-    smtp_host = os.environ.get('SMTP_HOST')
-    smtp_port = int(os.environ.get('SMTP_PORT', '0') or 0)
-    smtp_user = os.environ.get('SMTP_USER')
-    smtp_pass = os.environ.get('SMTP_PASS')
-
-    try:
-        if smtp_host and smtp_port:
-            if smtp_user and smtp_pass:
-                server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
-                server.login(smtp_user, smtp_pass)
-            else:
-                server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-                server.starttls()
-            server.send_message(msg)
-            server.quit()
-            update.message.reply_text('✅ Message sent successfully. We will contact you shortly.')
-        else:
-            # Fallback save to disk
-            out_dir = os.path.join(BASE_DIR, 'sent_emails')
-            os.makedirs(out_dir, exist_ok=True)
-            idx = len(os.listdir(out_dir)) + 1
-            path = os.path.join(out_dir, f'message_{idx}.eml')
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(f"To: {msg['To']}\nSubject: {msg['Subject']}\n\n{full_body}")
-            update.message.reply_text('⚠️ SMTP not configured; message saved locally for review.')
-    except Exception as e:
-        logger.error(f"Contact email failed: {e}")
-        update.message.reply_text(f'❌ Failed to send message: {e}')
+    full_body = (
+        f"From: {name} <{sender}>\n"
+        + _describe_user(update.effective_user)
+        + f"\n{body}\n"
+    )
+    sent = send_email(
+        f"[CV Bot contact] {subject}",
+        full_body,
+        _env_recipients('CONTACT_RECEIVER_EMAIL', 'ADMIN_EMAIL'),
+        reply_to=sender or None,
+        fallback_log="contact_messages.log",
+    )
+    if sent:
+        update.message.reply_text('✅ Message sent successfully. We will contact you shortly.')
+    else:
+        update.message.reply_text('⚠️ We could not email your message right now, but it was saved and will be reviewed.')
 
     # clean contact data
     for k in ['contact_name', 'contact_email', 'contact_subject']:
@@ -967,12 +994,33 @@ def admin_list_paid(update: Update, context: CallbackContext):
     update.message.reply_text('\n'.join(users) if users else '(no paid users)')
 
 
+def admin_test_email(update: Update, context: CallbackContext):
+    """Admin: send a test email to every configured recipient to verify SMTP."""
+    if not _is_admin(update):
+        update.message.reply_text('Unauthorized.')
+        return
+    notify = _env_recipients("NOTIFY_RECEIVER_EMAIL", "NEW_USER_RECEIVER_EMAIL", "ADMIN_EMAIL")
+    contact = _env_recipients("CONTACT_RECEIVER_EMAIL", "ADMIN_EMAIL")
+    recipients = sorted(set(notify + contact))
+    if not recipients:
+        update.message.reply_text('❌ No recipient email configured. Set NOTIFY_RECEIVER_EMAIL / CONTACT_RECEIVER_EMAIL in .env')
+        return
+    update.message.reply_text(f'📤 Sending test email to: {", ".join(recipients)} ...')
+    ok = send_email("CV bot SMTP test", "SMTP is configured correctly.\n\n" + _describe_user(update.effective_user), recipients)
+    update.message.reply_text('✅ Test email sent.' if ok else '❌ Sending failed — check SMTP_* settings and the server logs.')
+
+
 def help_handler(update: Update, context: CallbackContext):
     text = (
         "Available commands:\n"
         "/start - begin CV creation\n"
+        "/last - reuse your last saved CV (change template / edit)\n"
+        "/skip - skip the photo step\n"
+        "/cancel - cancel the current step\n"
+        "/contact - send us a message\n"
         "/comment - leave a comment\n"
         "/feedback - provide feedback\n"
+        "/help - show this message\n"
     )
     try:
         update.message.reply_text(text)
@@ -985,6 +1033,7 @@ def help_handler(update: Update, context: CallbackContext):
                 "/mark_paid <user_id>\n"
                 "/mark_unpaid <user_id>\n"
                 "/list_paid\n"
+                "/test_email - verify SMTP and recipient emails\n"
             )
             update.message.reply_text(admin_text)
     except Exception:
@@ -992,11 +1041,14 @@ def help_handler(update: Update, context: CallbackContext):
 
 def error_handler(update: Update, context: CallbackContext):
     """Log errors"""
-    logger.error(f"Update {update} caused error {context.error}")
-    if update.message:
-        update.message.reply_text(
-            "❌ An error occurred. Please try again or /cancel to start over."
-        )
+    logger.error("Update %s caused error", update, exc_info=context.error)
+    try:
+        if isinstance(update, Update) and update.effective_message:
+            update.effective_message.reply_text(
+                "❌ An error occurred. Please try again or /cancel to start over."
+            )
+    except Exception:
+        logger.exception("Failed to notify user about error")
 
 def main():
     """Start the bot"""
@@ -1028,14 +1080,20 @@ def main():
     dp.add_handler(CommandHandler('mark_paid', admin_mark_paid))
     dp.add_handler(CommandHandler('mark_unpaid', admin_mark_unpaid))
     dp.add_handler(CommandHandler('list_paid', admin_list_paid))
+    dp.add_handler(CommandHandler('test_email', admin_test_email))
     # Help command (shows admin commands to admin only)
     dp.add_handler(CommandHandler('help', lambda u, c: help_handler(u, c)))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
+        entry_points=[
+            CommandHandler('start', start),
+            CommandHandler('last', resume_last_cv),
+        ],
         states={
             PHOTO: [
                 MessageHandler(Filters.photo, receive_photo),
-                CallbackQueryHandler(skip_photo, pattern='^skip_photo$')
+                CallbackQueryHandler(skip_photo, pattern='^skip_photo$'),
+                CommandHandler('skip', skip_photo),
+                MessageHandler(~Filters.command, photo_expected),
             ],
             NAME: [MessageHandler(Filters.text & ~Filters.command, get_name)],
             EMAIL: [MessageHandler(Filters.text & ~Filters.command, get_email)],

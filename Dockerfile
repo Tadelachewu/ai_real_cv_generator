@@ -32,8 +32,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies in virtualenv
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+# NOTE: setuptools must stay < 81. python-telegram-bot 13.x depends on
+# APScheduler 3.6.3, which imports `pkg_resources` (removed in setuptools 81+).
+RUN pip install --upgrade pip wheel "setuptools<81" && \
+    pip install --no-cache-dir -r requirements.txt && \
+    python -c "import pkg_resources, telegram.ext, weasyprint; print('dependency check OK')"
 
 COPY . .
 

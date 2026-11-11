@@ -1,8 +1,10 @@
 import os
 from typing import Dict
-from venv import logger
+import logging
 from dotenv import load_dotenv
 import requests
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
