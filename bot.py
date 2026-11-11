@@ -957,7 +957,11 @@ def admin_payment_status(update: Update, context: CallbackContext):
         return
     settings = show_settings()
     users = list_paid_users()
-    update.message.reply_text(f"Settings: {settings}\nPaid users: {len(users)}")
+    update.message.reply_text(
+        f"💳 Payment required: {'ON' if settings.get('enabled') else 'OFF'}\n"
+        f"👥 Paid users: {len(users)}\n"
+        f"🗄️ Storage: {settings.get('storage', 'unknown')}"
+    )
 
 
 def admin_mark_paid(update: Update, context: CallbackContext):
@@ -1052,6 +1056,10 @@ def error_handler(update: Update, context: CallbackContext):
 
 def main():
     """Start the bot"""
+    # Connect persistent storage early so the startup log shows its status
+    import pg_store
+    if not pg_store.available():
+        logger.warning("Persistent storage: Postgres unavailable - using local files (data resets on redeploy)")
     updater = Updater(TELEGRAM_TOKEN)
     dp = updater.dispatcher
     dp.add_handler(feedback_conversation)

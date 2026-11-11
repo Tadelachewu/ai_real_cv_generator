@@ -1,8 +1,8 @@
-"""Resilient DB helpers.
+"""Saved-CV storage (used by /last).
 
-Attempts to use SQLite; if the DB is unavailable (disk full, too many connections,
-corruption, etc.) the module falls back to an in-memory dict persisted to
-a JSON file under `temp/` so the application can continue operating.
+Primary store is Postgres (`saved_cvs` table, see pg_store.py), so data
+survives Render deploys. If Postgres is unreachable it falls back to local
+SQLite, and if SQLite fails too, to a JSON file under `temp/`.
 """
 
 from datetime import datetime
@@ -141,8 +141,25 @@ _db = DBWrapper()
 
 
 def save_user_data(user_id: int, data: Dict):
+    """Save a user's CV data to Postgres (table saved_cvs), else locally."""
+    import pg_store
+    if pg_store.available():
+        try:
+            pg_store.save_cv(user_id, data)
+            return True
+        except Exception as e:
+            pg_store.mark_failed(e)
     return _db.save_user_data(user_id, data)
 
 
 def load_user_data(user_id: int) -> Optional[Dict]:
+    """Load a user's last CV data from Postgres, falling back to local storage."""
+    import pg_store
+    if pg_store.available():
+        try:
+            data = pg_store.load_cv(user_id)
+            if data is not None:
+                return data
+        except Exception as e:
+            pg_store.mark_failed(e)
     return _db.load_user_data(user_id)
