@@ -1,4 +1,20 @@
+# Secrets - never commit
 .env
+.env.*
+!.env.example
+
+# Python
 venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Neon / Node
 .neon
 node_modules/
+
+# Runtime logs and generated files
+*.log
+sent_emails/
+temp/*.pdf
+temp/*.docx

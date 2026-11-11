@@ -6,3 +6,6 @@ __pycache__/
 temp/*.pdf
 temp/*.docx
 node_modules/
+.env
+.env.*
+.neon
